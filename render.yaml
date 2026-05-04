@@ -22,7 +22,7 @@ services:
       sizeGB: 1
 
   # Frontend Client
-  - type: static
+  - type: static_site
     name: spv-client
     env: static
     region: singapore # Change as needed
