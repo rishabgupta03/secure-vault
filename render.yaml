@@ -4,7 +4,7 @@ services:
     name: spv-server
     env: node
     region: singapore # Change as needed
-    plan: free # Change as needed
+    plan: starter # Starter plan is required for persistent disks
     buildCommand: cd server && npm install
     startCommand: cd server && node server.js
     envVars:
@@ -25,7 +25,6 @@ services:
   - type: web
     name: spv-client
     runtime: static
-    region: singapore # Change as needed
     buildCommand: cd client && npm install && npm run build
     staticPublishPath: ./client/dist
     envVars:
