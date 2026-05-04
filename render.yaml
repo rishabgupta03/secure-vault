@@ -22,9 +22,9 @@ services:
       sizeGB: 1
 
   # Frontend Client
-  - type: static_site
+  - type: web
     name: spv-client
-    env: static
+    runtime: static
     region: singapore # Change as needed
     buildCommand: cd client && npm install && npm run build
     staticPublishPath: ./client/dist
