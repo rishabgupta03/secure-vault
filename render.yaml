@@ -4,7 +4,7 @@ services:
     name: spv-server
     env: node
     region: singapore # Change as needed
-    plan: starter # Starter plan is required for persistent disks
+    plan: free
     buildCommand: cd server && npm install
     startCommand: cd server && node server.js
     envVars:
@@ -16,10 +16,6 @@ services:
         generateValue: true
       - key: PORT
         value: 10000
-    disk:
-      name: uploads-disk
-      mountPath: /opt/render/project/src/server/uploads
-      sizeGB: 1
 
   # Frontend Client
   - type: web
