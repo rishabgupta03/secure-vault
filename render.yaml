@@ -3,7 +3,6 @@ services:
   - type: web
     name: spv-server
     env: node
-    region: singapore # Change as needed
     plan: free
     buildCommand: cd server && npm install
     startCommand: cd server && node server.js
@@ -11,7 +10,7 @@ services:
       - key: NODE_VERSION
         value: 20
       - key: MONGODB_URI
-        sync: false # Set this in Render Dashboard
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: PORT
