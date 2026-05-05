@@ -656,13 +656,10 @@ import {
   Grid,
   List,
   MoreVertical,
-  X as XIcon,
+  X,
   MessageSquare,
-  Lock,
-  Code as CodeIcon
+  Lock
 } from "lucide-react";
-
-import VaultEditor from "../components/VaultEditor";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -1409,11 +1406,6 @@ return (
             chat
             {globalUnread > 0 && <span className="absolute -top-2 -right-4 bg-blue-500 text-white text-[9px] px-1.5 rounded-full font-bold">{globalUnread}</span>}
           </span>
-          <span 
-            onClick={() => setActiveTab("code")} 
-            className={`cursor-pointer ${activeTab === "code" ? "text-blue-400 border-b border-blue-400 pb-1" : "text-gray-400"}`}>
-            development
-          </span>
         </div>
       </div>
 
@@ -1607,19 +1599,6 @@ return (
              </table>
           </div>
         </div>
-      ) : activeTab === "code" && vault ? (
-        <div className="flex-1 overflow-hidden">
-           <VaultEditor 
-             vaultId={vault?._id}
-             vault={vault}
-             userId={userId}
-             onRefresh={fetchVault}
-           />
-        </div>
-      ) : activeTab === "code" ? (
-        <div className="flex-1 flex items-center justify-center text-gray-500">
-           Initializing Secure IDE...
-        </div>
       ) : null}
       
       {/* VaultChat rendered persistently to allow background notifications */}
@@ -1658,7 +1637,7 @@ return (
         <div className="bg-[#0b0f1a] w-[420px] p-6 rounded-xl border border-white/10">
           <div className="flex justify-between mb-4">
             <h2 className="text-lg font-semibold">Invite Member</h2>
-            <XIcon onClick={() => setShowInvite(false)} className="cursor-pointer text-gray-400 hover:text-white" />
+            <X onClick={() => setShowInvite(false)} className="cursor-pointer text-gray-400 hover:text-white" />
           </div>
 
           <input
@@ -1675,7 +1654,6 @@ return (
           >
             <option>Viewer</option>
             <option>Editor</option>
-            <option>Developer</option>
             <option>Admin</option>
             <option>Security Auditor</option>
           </select>
@@ -1723,7 +1701,7 @@ return (
               >
                 {isSaving ? "Saving securely..." : "Save Changes"}
               </button>
-              <XIcon 
+              <X 
                 onClick={() => { setEditingFile(null); setEditorContent(""); setOriginalContent(""); setShowHistory(false); }} 
                 className="cursor-pointer text-gray-400 hover:text-white ml-2" 
                 size={24}
