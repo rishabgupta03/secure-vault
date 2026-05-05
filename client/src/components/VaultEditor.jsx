@@ -197,6 +197,8 @@ export default function VaultEditor({ vaultId, vault, userId, onRefresh }) {
     }
   };
 
+  if (!vault) return <div className="flex-1 flex items-center justify-center text-gray-500">Loading vault data...</div>;
+
   return (
     <div className="flex h-full w-full bg-[#06080f] text-gray-300 overflow-hidden font-sans border-t border-white/5">
       {/* 1. Project Explorer */}
@@ -212,7 +214,7 @@ export default function VaultEditor({ vaultId, vault, userId, onRefresh }) {
           <div className="px-4 py-2 flex items-center gap-2 text-xs font-semibold text-blue-400">
             <ChevronDown size={14} />
             <Folder size={14} />
-            {vault.name.toUpperCase()}
+            {(vault.name || "PROJECT").toUpperCase()}
           </div>
           <div className="pl-6">
             {files.map(f => (
@@ -225,6 +227,7 @@ export default function VaultEditor({ vaultId, vault, userId, onRefresh }) {
                 <span className="truncate">{f.name}</span>
               </div>
             ))}
+            {files.length === 0 && <p className="text-[10px] text-gray-600 p-4">No files available for editing.</p>}
           </div>
         </div>
       </div>
