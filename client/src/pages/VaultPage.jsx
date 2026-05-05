@@ -818,7 +818,20 @@ export default function VaultPage() {
       const res = await axios.get(`${API_URL}/api/file/${file._id}?userId=${userId}&action=${actionParam}`);
       const { file: base64File, encryptedKey, fileName } = res.data;
 
-      const aesKey = privateKey.decrypt(forge.util.decode64(encryptedKey), "RSA-OAEP");
+      // ✅ 2. Decrypt AES key using RSA (with fallback)
+      let aesKey;
+      try {
+        aesKey = privateKey.decrypt(forge.util.decode64(encryptedKey), "RSA-OAEP");
+      } catch (e) {
+        console.warn("Standard RSA decryption failed, trying fallback...");
+        aesKey = privateKey.decrypt(forge.util.decode64(encryptedKey), "RSA-OAEP", {
+          md: forge.md.sha1.create(),
+          mgf1: {
+            md: forge.md.sha1.create()
+          }
+        });
+      }
+
       const fileBytes = forge.util.decode64(base64File);
       const buffer = new Uint8Array(fileBytes.split("").map(c => c.charCodeAt(0)));
       
