@@ -656,10 +656,10 @@ import {
   Grid,
   List,
   MoreVertical,
-  X,
+  X as XIcon,
   MessageSquare,
   Lock,
-  Code
+  Code as CodeIcon
 } from "lucide-react";
 
 import VaultEditor from "../components/VaultEditor";
@@ -1658,7 +1658,7 @@ return (
         <div className="bg-[#0b0f1a] w-[420px] p-6 rounded-xl border border-white/10">
           <div className="flex justify-between mb-4">
             <h2 className="text-lg font-semibold">Invite Member</h2>
-            <X onClick={() => setShowInvite(false)} className="cursor-pointer text-gray-400 hover:text-white" />
+            <XIcon onClick={() => setShowInvite(false)} className="cursor-pointer text-gray-400 hover:text-white" />
           </div>
 
           <input
@@ -1723,7 +1723,7 @@ return (
               >
                 {isSaving ? "Saving securely..." : "Save Changes"}
               </button>
-              <X 
+              <XIcon 
                 onClick={() => { setEditingFile(null); setEditorContent(""); setOriginalContent(""); setShowHistory(false); }} 
                 className="cursor-pointer text-gray-400 hover:text-white ml-2" 
                 size={24}
