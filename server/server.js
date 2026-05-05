@@ -480,6 +480,17 @@ app.get("/api/logs", async (req, res) => {
   }
 });
 
+// ================= NOTIFICATIONS =================
+app.get("/api/notifications/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    // Return empty array for now or fetch from a Notification model if exists
+    res.json([]);
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // REPORT GENERATION & THREAT ANALYSIS
 app.post("/api/reports/generate", async (req, res) => {
   try {
@@ -653,7 +664,7 @@ app.get("/api/file/:fileId", async (req, res) => {
 
     // ✅ FIND VAULT CONTAINING FILE
     const vault = await Vault.findOne({
-      "files._id": fileId
+      "files._id": new mongoose.Types.ObjectId(fileId)
     });
 
     if (!vault) {
