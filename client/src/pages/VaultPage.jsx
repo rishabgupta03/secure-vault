@@ -652,15 +652,15 @@ import TeamCall from "./TeamCall";
 import VaultEditor from "../components/VaultEditor";
 
 import {
-  Users,
-  Share2,
-  Phone,
-  Grid,
-  List,
-  MoreVertical,
-  X,
-  MessageSquare,
-  Lock
+  Users as UsersIcon,
+  Share2 as ShareIcon,
+  Phone as PhoneIcon,
+  Grid as GridIcon,
+  List as ListIcon,
+  MoreVertical as MoreIcon,
+  X as XIcon,
+  MessageSquare as MessageIcon,
+  Lock as LockIcon
 } from "lucide-react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -834,10 +834,14 @@ export default function VaultPage() {
         ["decrypt"]
       );
 
+      const combined = new Uint8Array(encryptedData.length + tag.length);
+      combined.set(encryptedData);
+      combined.set(tag, encryptedData.length);
+
       const decrypted = await window.crypto.subtle.decrypt(
         { name: "AES-GCM", iv: iv, tagLength: 128 },
         cryptoKey,
-        new Uint8Array([...encryptedData, ...tag])
+        combined
       );
 
 
@@ -1516,7 +1520,7 @@ return (
         <div className="bg-[#0b0f1a] w-[420px] p-6 rounded-xl border border-white/10">
           <div className="flex justify-between mb-4">
             <h2 className="text-lg font-semibold">Invite Member</h2>
-            <X onClick={() => setShowInvite(false)} className="cursor-pointer text-gray-400 hover:text-white" />
+            <XIcon onClick={() => setShowInvite(false)} className="cursor-pointer text-gray-400 hover:text-white" />
           </div>
 
           <input
@@ -1581,7 +1585,7 @@ return (
               >
                 {isSaving ? "Saving securely..." : "Save Changes"}
               </button>
-              <X 
+              <XIcon 
                 onClick={() => { setEditingFile(null); setEditorContent(""); setOriginalContent(""); setShowHistory(false); }} 
                 className="cursor-pointer text-gray-400 hover:text-white ml-2" 
                 size={24}
