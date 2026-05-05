@@ -1,149 +1,157 @@
-// import React, { useEffect, useState, useRef } from "react";
-// import axios from "axios";
-// import forge from "node-forge";
-// import {
-//   Users,
-//   Share2,
-//   Phone,
-//   Grid,
-//   List,
-//   MoreVertical,
-//   X
-// } from "lucide-react";
+import React, { useEffect, useState, useRef } from "react";
+import axios from "axios";
+import forge from "node-forge";
+import {
+  Users,
+  Share2,
+  Phone,
+  Grid,
+  List,
+  MoreVertical,
+  X,
+  Lock,
+  MessageSquare
+} from "lucide-react";
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
+import * as Diff from 'diff';
+import VaultChat from "./VaultChat";
 
-// // ================= ZERO KNOWLEDGE SHARE =================
-// const shareKeysWithUser = async (vault, targetUserId) => {
-//   try {
-//     const myPrivateKeyPem = localStorage.getItem("privateKey");
-//     const myUserId = localStorage.getItem("userId");
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-//     if (!myPrivateKeyPem) {
-//       alert("Private key missing");
-//       return;
-//     }
+// ================= ZERO KNOWLEDGE SHARE =================
+const shareKeysWithUser = async (vault, targetUserId) => {
+  try {
+    const myPrivateKeyPem = localStorage.getItem("privateKey");
+    const myUserId = localStorage.getItem("userId");
 
-//     const privateKey = forge.pki.privateKeyFromPem(myPrivateKeyPem);
+    if (!myPrivateKeyPem) {
+      alert("Private key missing");
+      return;
+    }
 
-//     // 🔹 get target public key
-//     const res = await axios.get(
-//       `${API_URL}/api/user/${targetUserId}`
-//     );
+    const privateKey = forge.pki.privateKeyFromPem(myPrivateKeyPem);
 
-//     const targetPublicKey = forge.pki.publicKeyFromPem(res.data.publicKey);
+    // 🔹 get target public key
+    const res = await axios.get(
+      `${API_URL}/api/user/${targetUserId}`
+    );
 
-//     for (let file of vault.files) {
-//       try {
-//         // ✅ STEP 1: get YOUR encrypted AES key
-//         const keyRes = await axios.get(
-//           `${API_URL}/api/file/${file._id}?userId=${myUserId}`
-//         );
+    const targetPublicKey = forge.pki.publicKeyFromPem(res.data.publicKey);
 
-//         const encryptedKeyBase64 = keyRes.data.encryptedKey;
+    for (let file of vault.files) {
+      try {
+        // ✅ STEP 1: get YOUR encrypted AES key
+        const keyRes = await axios.get(
+          `${API_URL}/api/file/${file._id}?userId=${myUserId}`
+        );
 
-//         if (!encryptedKeyBase64) continue;
+        const encryptedKeyBase64 = keyRes.data.encryptedKey;
 
-//         // ✅ STEP 2: decrypt AES key (YOUR PRIVATE KEY)
-//         const decryptedAESKey = privateKey.decrypt(
-//           forge.util.decode64(encryptedKeyBase64),
-//           "RSA-OAEP"
-//         );
+        if (!encryptedKeyBase64) continue;
 
-//         // ✅ STEP 3: encrypt for new user
-//         const newEncryptedKey = targetPublicKey.encrypt(
-//           decryptedAESKey,
-//           "RSA-OAEP"
-//         );
+        // ✅ STEP 2: decrypt AES key (YOUR PRIVATE KEY)
+        const decryptedAESKey = privateKey.decrypt(
+          forge.util.decode64(encryptedKeyBase64),
+          "RSA-OAEP"
+        );
 
-//         // ✅ STEP 4: send to backend
-//         await axios.post(API_URL + "/api/share-file-key", {
-//           fileId: file._id,
-//           targetUserId,
-//           encryptedKey: forge.util.encode64(newEncryptedKey)
-//         });
+        // ✅ STEP 3: encrypt for new user
+        const newEncryptedKey = targetPublicKey.encrypt(
+          decryptedAESKey,
+          "RSA-OAEP"
+        );
 
-//       } catch (fileErr) {
-//         console.error("Error sharing file key:", file._id, fileErr);
-//       }
-//     }
+        // ✅ STEP 4: send to backend
+        await axios.post(API_URL + "/api/share-file-key", {
+          fileId: file._id,
+          targetUserId,
+          encryptedKey: forge.util.encode64(newEncryptedKey)
+        });
 
-//     console.log("✅ Keys shared securely");
+      } catch (fileErr) {
+        console.error("Error sharing file key:", file._id, fileErr);
+      }
+    }
 
-//   } catch (err) {
-//     console.error("KEY SHARE ERROR:", err);
-//   }
-// };
-// const downloadAndDecryptFile = async (file) => {
-//   try {
-//     const userId = localStorage.getItem("userId");
-//     const privateKeyPem = localStorage.getItem("privateKey");
+    console.log("✅ Keys shared securely");
 
-//     if (!privateKeyPem) {
-//       alert("Private key missing");
-//       return;
-//     }
+  } catch (err) {
+    console.error("KEY SHARE ERROR:", err);
+  }
+};
+const downloadAndDecryptFile = async (file) => {
+  try {
+    const userId = localStorage.getItem("userId");
+    const privateKeyPem = localStorage.getItem("privateKey");
 
-//     const privateKey = forge.pki.privateKeyFromPem(privateKeyPem);
+    if (!privateKeyPem) {
+      alert("Private key missing");
+      return;
+    }
 
-//     // ✅ 1. Get encrypted file + encrypted AES key
-//     const res = await axios.get(
-//       `${API_URL}/api/file/${file._id}?userId=${userId}`
-//     );
+    const privateKey = forge.pki.privateKeyFromPem(privateKeyPem);
 
-//     const { file: base64File, encryptedKey, fileName } = res.data;
+    // ✅ 1. Get encrypted file + encrypted AES key
+    const res = await axios.get(
+      `${API_URL}/api/file/${file._id}?userId=${userId}`
+    );
 
-//     // ✅ 2. Decrypt AES key using RSA
-//     const aesKey = privateKey.decrypt(
-//       forge.util.decode64(encryptedKey),
-//       "RSA-OAEP"
-//     );
+    const { file: base64File, encryptedKey, fileName } = res.data;
 
-//     // ✅ 3. Convert file from base64 → bytes
-//     const fileBytes = forge.util.decode64(base64File);
+    // ✅ 2. Decrypt AES key using RSA
+    const aesKey = privateKey.decrypt(
+      forge.util.decode64(encryptedKey),
+      "RSA-OAEP"
+    );
 
-//     // Convert to Uint8Array
-//     const buffer = new Uint8Array(
-//       fileBytes.split("").map(c => c.charCodeAt(0))
-//     );
+    // ✅ 3. Convert file from base64 → bytes
+    const fileBytes = forge.util.decode64(base64File);
 
-//     // ✅ 4. Extract IV (12 bytes), TAG (16 bytes), DATA
-//     const iv = buffer.slice(0, 12);
-//     const tag = buffer.slice(12, 28);
-//     const encryptedData = buffer.slice(28);
+    // Convert to Uint8Array
+    const buffer = new Uint8Array(
+      fileBytes.split("").map(c => c.charCodeAt(0))
+    );
 
-//     // ✅ 5. AES-GCM decrypt using Web Crypto API
-//     const cryptoKey = await window.crypto.subtle.importKey(
-//       "raw",
-//       new Uint8Array(
-//         aesKey.split("").map(c => c.charCodeAt(0))
-//       ),
-//       { name: "AES-GCM" },
-//       false,
-//       ["decrypt"]
-//     );
+    // ✅ 4. Extract IV (12 bytes), TAG (16 bytes), DATA
+    const iv = buffer.slice(0, 12);
+    const tag = buffer.slice(12, 28);
+    const encryptedData = buffer.slice(28);
 
-//     const decrypted = await window.crypto.subtle.decrypt(
-//       {
-//         name: "AES-GCM",
-//         iv: iv,
-//         tagLength: 128
-//       },
-//       cryptoKey,
-//       new Uint8Array([...encryptedData, ...tag])
-//     );
+    // ✅ 5. AES-GCM decrypt using Web Crypto API
+    const cryptoKey = await window.crypto.subtle.importKey(
+      "raw",
+      new Uint8Array(
+        aesKey.split("").map(c => c.charCodeAt(0))
+      ),
+      { name: "AES-GCM" },
+      false,
+      ["decrypt"]
+    );
 
-//     // ✅ 6. Convert to Blob and download
-//     const blob = new Blob([decrypted]);
+    const decrypted = await window.crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: iv,
+        tagLength: 128
+      },
+      cryptoKey,
+      new Uint8Array([...encryptedData, ...tag])
+    );
 
-//     const link = document.createElement("a");
-//     link.href = URL.createObjectURL(blob);
-//     link.download = fileName;
-//     link.click();
+    // ✅ 6. Convert to Blob and download
+    const blob = new Blob([decrypted]);
 
-//   } catch (err) {
-//     console.error("DOWNLOAD + DECRYPT ERROR:", err);
-//     alert("Failed to decrypt file");
-//   }
-// };
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = fileName;
+    link.click();
+
+  } catch (err) {
+    console.error("DOWNLOAD + DECRYPT ERROR:", err);
+    alert("Failed to decrypt file");
+  }
+};
 
 // export default function VaultPage() {
 //   const id = window.location.pathname.split("/")[2];
