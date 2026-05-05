@@ -75,40 +75,33 @@ export default function VaultChat({ vaultId, vault, setShowInvite, isActive, onU
              return;
            }
         }
+        
         setChatKey(aesKey);
+
+        // Simple auto-share for owner
+        if (vault.userId === userId && aesKey && vault.members) {
+          for (const member of vault.members) {
+            if (member.userId === userId) continue;
+            try {
+              const checkRes = await axios.post(`${API_URL}/api/vault/${vaultId}/chat/key`, { userId: member.userId });
+              if (checkRes.data.encryptedChatKey) continue;
+              const memberUserRes = await axios.get(`${API_URL}/api/user/${member.userId}`);
+              if (!memberUserRes.data.publicKey) continue;
+              const memberPubKey = forge.pki.publicKeyFromPem(memberUserRes.data.publicKey);
+              const encryptedForMember = forge.util.encode64(memberPubKey.encrypt(aesKey, "RSA-OAEP"));
+              await axios.post(`${API_URL}/api/vault/${vaultId}/chat/share`, {
+                targetUserId: member.userId,
+                encryptedChatKey: encryptedForMember
+              });
+            } catch (e) {}
+          }
+        }
       } catch (err) {
         console.error("Chat init error", err);
       }
     };
     initChat();
-  }, [vaultId, vault.userId]);
-
-  // ✅ PROACTIVE AUTO-SHARE: Owner pushes keys whenever members change
-  useEffect(() => {
-    const shareKeys = async () => {
-      if (vault.userId === userId && chatKey && vault.members) {
-        for (const member of vault.members) {
-          if (member.userId === userId) continue;
-          try {
-            const checkRes = await axios.post(`${API_URL}/api/vault/${vaultId}/chat/key`, { userId: member.userId });
-            if (checkRes.data.encryptedChatKey) continue;
-
-            const memberUserRes = await axios.get(`${API_URL}/api/user/${member.userId}`);
-            if (!memberUserRes.data.publicKey) continue;
-            const memberPubKey = forge.pki.publicKeyFromPem(memberUserRes.data.publicKey);
-            const encryptedForMember = forge.util.encode64(memberPubKey.encrypt(chatKey, "RSA-OAEP"));
-            
-            await axios.post(`${API_URL}/api/vault/${vaultId}/chat/share`, {
-              targetUserId: member.userId,
-              encryptedChatKey: encryptedForMember
-            });
-            console.log(`✅ Auto-shared key with member: ${member.userId}`);
-          } catch (e) {}
-        }
-      }
-    };
-    shareKeys();
-  }, [vault.members, chatKey]);
+  }, [vaultId, vault.userId, vault.members]);
 
   useEffect(() => {
     if (!vaultId || !userId) return;
@@ -271,7 +264,7 @@ export default function VaultChat({ vaultId, vault, setShowInvite, isActive, onU
   }, [messages]);
 
   const decryptMessage = async (msg) => {
-    if (!chatKey) return { ...msg, content: "🔒 Awaiting Secure Chat Key (Owner must be online)..." };
+    if (!chatKey) return { ...msg, content: "[Encrypted Message]" };
     try {
       const iv = forge.util.decode64(msg.iv);
       const tag = forge.util.decode64(msg.tag);
@@ -295,7 +288,7 @@ export default function VaultChat({ vaultId, vault, setShowInvite, isActive, onU
       return { ...msg, content };
     } catch(err) {
       console.error(err);
-      return { ...msg, content: "🔒 [Encrypted Message]" };
+      return { ...msg, content: "[Encrypted Message]" };
     }
   };
 
