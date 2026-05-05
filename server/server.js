@@ -75,9 +75,18 @@ function decryptBuffer(buffer) {
 }
 
 // ================= DB =================
-mongoose.connect(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/spv")
-  .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.log(err));
+const mongoURI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/spv";
+console.log("Attempting to connect to MongoDB...");
+
+mongoose.connect(mongoURI, {
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
+})
+  .then(() => console.log("✅ MongoDB Connected Successfully"))
+  .catch(err => {
+    console.error("❌ MongoDB Connection Error:");
+    console.error(err);
+  });
 
 // ================= MODELS =================
 const User = mongoose.model("User", {
