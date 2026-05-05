@@ -1607,14 +1607,18 @@ return (
              </table>
           </div>
         </div>
-      ) : activeTab === "code" ? (
+      ) : activeTab === "code" && vault ? (
         <div className="flex-1 overflow-hidden">
            <VaultEditor 
-             vaultId={vault._id}
+             vaultId={vault?._id}
              vault={vault}
              userId={userId}
              onRefresh={fetchVault}
            />
+        </div>
+      ) : activeTab === "code" ? (
+        <div className="flex-1 flex items-center justify-center text-gray-500">
+           Initializing Secure IDE...
         </div>
       ) : null}
       
