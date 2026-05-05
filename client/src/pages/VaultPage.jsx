@@ -1109,7 +1109,7 @@ export default function VaultPage() {
         <div className="bg-[#0b0f1a] p-10 rounded-[2.5rem] border border-white/5 w-full max-w-sm text-center shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600 via-amber-500 to-blue-600" />
           <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/20 rounded-3xl flex items-center justify-center mx-auto mb-8 transition-transform hover:scale-110">
-            <Lock size={40} className="text-amber-500" />
+            <LockIcon size={40} className="text-amber-500" />
           </div>
           <h2 className="text-3xl font-black mb-3 tracking-tight">Protected</h2>
           <p className="text-gray-500 text-sm mb-10 leading-relaxed font-medium">Enter the 4-digit PIN to access this secure environment.</p>
@@ -1518,7 +1518,7 @@ return (
     {toastMessage && (
       <div className="fixed bottom-6 right-6 bg-[#1a233a] border border-blue-500/30 text-white p-4 rounded-xl shadow-2xl z-50 flex items-center gap-3 animate-fade-in-up">
          <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
-            <MessageSquare size={16} className="text-blue-400" />
+            <MessageIcon size={16} className="text-blue-400" />
          </div>
          <div>
             <p className="text-xs text-gray-400 font-semibold">{toastMessage.title}</p>
