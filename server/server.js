@@ -639,8 +639,48 @@ app.post("/api/file/:fileId/restore", async (req, res) => {
 
 
 
+// ================= ZIP EXPORT =================
+const AdmZip = require("adm-zip");
 
-// DOWNLOAD FILE
+app.get("/api/vault/:vaultId/export", async (req, res) => {
+  try {
+    const { vaultId } = req.params;
+    const { userId } = req.query;
+
+    const vault = await Vault.findById(vaultId);
+    if (!vault) return res.status(404).json({ message: "Vault not found" });
+
+    // Validate permission
+    const member = vault.members.find(m => m.userId === userId);
+    const role = vault.userId === userId ? "owner" : (member?.role || "").toLowerCase();
+    if (!hasPermission(role, "view")) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const zip = new AdmZip();
+    
+    for (const file of vault.files) {
+      const filepath = path.join(UPLOAD_DIR, file.key);
+      if (fs.existsSync(filepath)) {
+        const content = fs.readFileSync(filepath);
+        // Note: Files are stored encrypted. The client will need to decrypt them
+        // if they want the raw code, but for a simple zip export, we pack them as is
+        // Or we could have a "Source Code" mode where we expect text files.
+        zip.addFile(file.name, content);
+      }
+    }
+
+    const zipBuffer = zip.toBuffer();
+    res.set("Content-Type", "application/zip");
+    res.set("Content-Disposition", `attachment; filename="${vault.name}.zip"`);
+    res.send(zipBuffer);
+
+    await createLog(vaultId, userId, "EXPORT_VAULT", `Exported entire vault as ZIP`, role);
+  } catch (err) {
+    console.error("ZIP EXPORT ERROR:", err);
+    res.status(500).json({ message: "Export failed" });
+  }
+});
 app.get("/api/file/:fileId", async (req, res) => {
   try {
     const { fileId } = req.params;

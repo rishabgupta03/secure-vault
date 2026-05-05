@@ -658,8 +658,11 @@ import {
   MoreVertical,
   X,
   MessageSquare,
-  Lock
+  Lock,
+  Code
 } from "lucide-react";
+
+import VaultEditor from "../components/VaultEditor";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -1406,6 +1409,11 @@ return (
             chat
             {globalUnread > 0 && <span className="absolute -top-2 -right-4 bg-blue-500 text-white text-[9px] px-1.5 rounded-full font-bold">{globalUnread}</span>}
           </span>
+          <span 
+            onClick={() => setActiveTab("code")} 
+            className={`cursor-pointer ${activeTab === "code" ? "text-blue-400 border-b border-blue-400 pb-1" : "text-gray-400"}`}>
+            development
+          </span>
         </div>
       </div>
 
@@ -1598,6 +1606,15 @@ return (
                </tbody>
              </table>
           </div>
+        </div>
+      ) : activeTab === "code" ? (
+        <div className="flex-1 overflow-hidden">
+           <VaultEditor 
+             vaultId={vault._id}
+             vault={vault}
+             userId={userId}
+             onRefresh={fetchVault}
+           />
         </div>
       ) : null}
       
