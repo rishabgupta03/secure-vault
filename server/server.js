@@ -98,12 +98,41 @@ const User = mongoose.model("User", {
   keySalt: String,
   keyIv: String,
   // Profile fields
-  profilePicture: String,  // base64 data URL
+  profilePicture: String,
   dob: String,
   bio: String,
   phone: String,
   location: String,
   jobTitle: String
+});
+
+const CallSchedule = mongoose.model("CallSchedule", {
+  vaultId: String,
+  title: String,
+  description: String,
+  scheduledAt: Date,
+  createdBy: String,
+  members: [String], // Array of userIds
+  isCancelled: { type: Boolean, default: false }
+});
+
+const CallSession = mongoose.model("CallSession", {
+  vaultId: String,
+  channelId: String,
+  isActive: { type: Boolean, default: true },
+  startedAt: { type: Date, default: Date.now },
+  endedAt: Date,
+  participants: [{ userId: String, joinedAt: Date }]
+});
+
+const Notification = mongoose.model("Notification", {
+  userId: String,
+  type: String, // 'call_invite', 'reminder', 'system'
+  title: String,
+  message: String,
+  data: Object,
+  isRead: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
 });
 
 const AuditLog = mongoose.model("AuditLog", {
@@ -639,48 +668,8 @@ app.post("/api/file/:fileId/restore", async (req, res) => {
 
 
 
-// ================= ZIP EXPORT =================
-const AdmZip = require("adm-zip");
 
-app.get("/api/vault/:vaultId/export", async (req, res) => {
-  try {
-    const { vaultId } = req.params;
-    const { userId } = req.query;
-
-    const vault = await Vault.findById(vaultId);
-    if (!vault) return res.status(404).json({ message: "Vault not found" });
-
-    // Validate permission
-    const member = vault.members.find(m => m.userId === userId);
-    const role = vault.userId === userId ? "owner" : (member?.role || "").toLowerCase();
-    if (!hasPermission(role, "view")) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    const zip = new AdmZip();
-    
-    for (const file of vault.files) {
-      const filepath = path.join(UPLOAD_DIR, file.key);
-      if (fs.existsSync(filepath)) {
-        const content = fs.readFileSync(filepath);
-        // Note: Files are stored encrypted. The client will need to decrypt them
-        // if they want the raw code, but for a simple zip export, we pack them as is
-        // Or we could have a "Source Code" mode where we expect text files.
-        zip.addFile(file.name, content);
-      }
-    }
-
-    const zipBuffer = zip.toBuffer();
-    res.set("Content-Type", "application/zip");
-    res.set("Content-Disposition", `attachment; filename="${vault.name}.zip"`);
-    res.send(zipBuffer);
-
-    await createLog(vaultId, userId, "EXPORT_VAULT", `Exported entire vault as ZIP`, role);
-  } catch (err) {
-    console.error("ZIP EXPORT ERROR:", err);
-    res.status(500).json({ message: "Export failed" });
-  }
-});
+// DOWNLOAD FILE
 app.get("/api/file/:fileId", async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -1082,10 +1071,7 @@ app.get("/api/vault/:vaultId/unread", async (req, res) => {
   try {
     const { vaultId } = req.params;
     const { userId } = req.query;
-    
-    // Find messages in the vault where readBy does not contain userId
     const unreadMsgs = await ChatMessage.find({ vaultId, readBy: { $ne: userId } });
-    
     const counts = {};
     unreadMsgs.forEach(m => {
       counts[m.channelId] = (counts[m.channelId] || 0) + 1;
@@ -1093,6 +1079,62 @@ app.get("/api/vault/:vaultId/unread", async (req, res) => {
     res.json(counts);
   } catch (err) {
     res.status(500).json({ message: "Failed to get unread counts" });
+  }
+});
+
+// ================= CALLING & NOTIFICATION APIS =================
+
+// Schedule a call
+app.post("/api/vault/:vaultId/calls/schedule", async (req, res) => {
+  try {
+    const { vaultId } = req.params;
+    const schedule = await CallSchedule.create({ ...req.body, vaultId });
+    
+    // Notify all members
+    const notifications = schedule.members.map(userId => ({
+      userId,
+      type: 'call_invite',
+      title: 'New Call Scheduled',
+      message: `A new call "${schedule.title}" has been scheduled for ${new Date(schedule.scheduledAt).toLocaleString()}`,
+      data: { vaultId, scheduleId: schedule._id }
+    }));
+    await Notification.insertMany(notifications);
+    
+    res.json(schedule);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to schedule call" });
+  }
+});
+
+// Get scheduled calls for a vault
+app.get("/api/vault/:vaultId/calls/schedules", async (req, res) => {
+  try {
+    const { vaultId } = req.params;
+    const schedules = await CallSchedule.find({ vaultId, isCancelled: false }).sort({ scheduledAt: 1 });
+    res.json(schedules);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to get schedules" });
+  }
+});
+
+// Get user notifications
+app.get("/api/notifications/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const notifications = await Notification.find({ userId }).sort({ createdAt: -1 }).limit(20);
+    res.json(notifications);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to get notifications" });
+  }
+});
+
+// Mark notification as read
+app.post("/api/notifications/:id/read", async (req, res) => {
+  try {
+    await Notification.findByIdAndUpdate(req.params.id, { isRead: true });
+    res.json({ message: "Marked as read" });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to mark as read" });
   }
 });
 
@@ -1117,6 +1159,29 @@ io.on("connection", (socket) => {
 
   socket.on("join_channel", (channelId) => {
     socket.join(channelId);
+  });
+
+  // --- Calling Socket Events ---
+  socket.on("start_call", (data) => {
+    // data: { vaultId, channelId, callerId, callerName }
+    socket.to(data.vaultId).emit("incoming_call", data);
+  });
+
+  socket.on("join_call", (data) => {
+    // data: { vaultId, userId, userName }
+    socket.join(`call_${data.vaultId}`);
+    socket.to(`call_${data.vaultId}`).emit("user_joined_call", data);
+  });
+
+  socket.on("call_signal", (data) => {
+    // WebRTC signaling: offer, answer, ice-candidate
+    // data: { to, from, signal }
+    socket.to(data.to).emit("call_signal", { from: data.from, signal: data.signal });
+  });
+
+  socket.on("leave_call", (data) => {
+    socket.to(`call_${data.vaultId}`).emit("user_left_call", data);
+    socket.leave(`call_${data.vaultId}`);
   });
 
   socket.on("send_message", async (data) => {

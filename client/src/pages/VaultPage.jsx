@@ -648,6 +648,7 @@ import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import * as Diff from 'diff';
 import VaultChat from "./VaultChat";
+import TeamCall from "./TeamCall";
 
 import {
   Users,
@@ -998,28 +999,6 @@ export default function VaultPage() {
   const canInvite = ["Owner", "Admin"].includes(role);
 
   // ================= INVITE =================
-  // const inviteUser = async () => {
-  //   try {
-  //     if (!inviteEmail.trim()) return alert("Enter email");
-
-  //     await axios.post(API_URL + "/api/share-vault", {
-  //       vaultId: id,
-  //       email: inviteEmail,
-  //       role: inviteRole,
-  //       addedBy: userId
-  //     });
-
-  //     alert("✅ Member added");
-
-  //     setInviteEmail("");
-  //     setInviteRole("Viewer");
-  //     setShowInvite(false);
-
-  //     fetchVault();
-  //   } catch (err) {
-  //     alert(err.response?.data?.message || "Invite failed");
-  //   }
-  // };
   const inviteUser = async () => {
     try {
       if (!inviteEmail.trim()) return alert("Enter email");
@@ -1156,178 +1135,10 @@ export default function VaultPage() {
   if (sortOption === "name-asc") filteredFiles.sort((a,b) => a.name.localeCompare(b.name));
   if (sortOption === "name-desc") filteredFiles.sort((a,b) => b.name.localeCompare(a.name));
   if (sortOption === "size-asc") filteredFiles.sort((a,b) => a.size - b.size);
-  if (sortOption === "size-desc") filteredFiles.sort((a,b) => b.size - a.size);
+  if (sortOption === "size-desc") filteredFiles.sort((a,b) => a.size - b.size);
   if (sortOption === "date-asc") filteredFiles.sort((a,b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   if (sortOption === "date-desc") filteredFiles.sort((a,b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
-//   return (
-//     <div className="h-screen bg-[#02030a] text-white flex flex-col">
-  
-//       {/* ================= TOP NAV ================= */}
-//       <div className="h-[60px] border-b border-white/10 flex items-center justify-between px-6 bg-[#03050c]">
-  
-//         <input
-//           placeholder="Search files, vaults, members..."
-//           className="bg-[#0b0f1a] px-4 py-2 rounded w-[400px] border border-white/10"
-//         />
-  
-//         <div className="flex items-center gap-4">
-//           <div className="w-8 h-8 rounded-full bg-gray-600" />
-//         </div>
-//       </div>
-  
-//       <div className="flex-1 flex flex-col overflow-hidden">
-  
-//           {/* ===== VAULT HEADER ===== */}
-//           <div className="px-6 py-4 border-b border-white/10">
-  
-//             <div className="flex justify-between items-center">
-//               <div>
-//                 <h1 className="text-xl font-semibold">{vault.name}</h1>
-//                 <p className="text-xs text-gray-400">
-//                   End-to-End Encrypted • {vault.members?.length} Members • {formatSize(vault.storageUsed)}
-//                 </p>
-//               </div>
-  
-//               <div className="flex gap-3">
-//                 <button onClick={() => setShowInvite(true)} className="px-3 py-1 bg-white/5 border border-white/10 rounded">
-//                   Invite
-//                 </button>
-  
-//                 <button className="px-3 py-1 bg-white/5 border border-white/10 rounded">
-//                   Share
-//                 </button>
-  
-//                 <button className="px-3 py-1 bg-purple-600 rounded">
-//                   Chat
-//                 </button>
-//               </div>
-//             </div>
-  
-//             {/* ===== TABS ===== */}
-//             <div className="flex gap-6 mt-4 text-sm">
-//               <span className="text-blue-400 border-b border-blue-400 pb-1">files</span>
-//               <span className="text-gray-400">activity</span>
-//               <span className="text-gray-400">members</span>
-//               <span className="text-gray-400">chat</span>
-//             </div>
-//           </div>
-  
-//           {/* ===== TOOLBAR ===== */}
-//           <div className="px-6 py-4 flex justify-between items-center">
-  
-//             <div className="flex items-center gap-3">
-//               <span className="text-gray-400 text-sm">Root / Assets / Q3_Designs</span>
-//             </div>
-  
-//             <div className="flex items-center gap-3">
-//               <input
-//                 placeholder="Search within folder..."
-//                 value={search}
-//                 onChange={(e) => setSearch(e.target.value)}
-//                 className="bg-[#0b0f1a] px-3 py-2 rounded border border-white/10"
-//               />
-  
-//               <button className="px-3 py-2 bg-white/5 rounded border border-white/10">Filter</button>
-//               <button className="px-3 py-2 bg-white/5 rounded border border-white/10">Sort</button>
-  
-//               <button
-//                 onClick={() => fileInputRef.current?.click()}
-//                 className="px-4 py-2 bg-blue-600 rounded"
-//               >
-//                 Upload
-//               </button>
-//             </div>
-//           </div>
-  
-//           {/* ===== FILE GRID ===== */}
-//           <div className="flex-1 px-6 overflow-y-auto">
-  
-//             <div className="grid grid-cols-4 gap-4">
-  
-//               {filteredFiles?.length === 0 && (
-//                 <p className="text-gray-400 col-span-4 text-center">
-//                   No files found
-//                 </p>
-//               )}
-  
-//               {filteredFiles?.map((f, i) => (
-//                 <div
-//                   key={i}
-//                   onClick={() => downloadAndDecryptFile(f)}
-//                   className="bg-[#06080f] p-5 rounded-xl border border-white/10 hover:bg-[#0b0f1a] cursor-pointer"
-//                 >
-//                   <div className="text-3xl text-center mb-3">
-//                     {getFileIcon(f.name)}
-//                   </div>
-  
-//                   <p className="text-sm text-center truncate">{f.name}</p>
-  
-//                   <p className="text-xs text-gray-400 text-center mt-1">
-//                     {formatSize(f.size)}
-//                   </p>
-  
-//                   <p className="text-xs text-blue-400 text-center mt-2">
-//                     ENCRYPTED
-//                   </p>
-//                 </div>
-//               ))}
-//             </div>
-  
-//           </div>
-//         </div>
-    
-  
-//       {/* ===== INVITE MODAL ===== */}
-//       {showInvite && (
-//   <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-//     <div className="bg-[#0b0f1a] w-[420px] p-6 rounded-2xl border border-white/10">
-      
-//       <div className="flex justify-between mb-4">
-//         <h2 className="text-lg font-semibold">Invite Member</h2>
-//         <X
-//           onClick={() => setShowInvite(false)}
-//           className="cursor-pointer"
-//         />
-//       </div>
-
-//       <input
-//         placeholder="Enter email"
-//         className="w-full p-3 mb-3 bg-[#111] rounded border border-white/10"
-//         value={inviteEmail}
-//         onChange={(e) => setInviteEmail(e.target.value)}
-//       />
-
-//       <select
-//         className="w-full p-3 mb-4 bg-[#111] rounded border border-white/10"
-//         value={inviteRole}
-//         onChange={(e) => setInviteRole(e.target.value)}
-//       >
-//         <option>Viewer</option>
-//         <option>Editor</option>
-//         <option>Admin</option>
-//         <option>Developer</option>
-//         <option>Security Auditor</option>
-//       </select>
-
-//       <button
-//         onClick={inviteUser}
-//         className="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 rounded"
-//       >
-//         Send Invite
-//       </button>
-//     </div>
-//   </div>
-// )}
-  
-//       <input
-//         type="file"
-//         ref={fileInputRef}
-//         className="hidden"
-//         onChange={(e) => uploadFile(e.target.files[0])}
-//       />
-//     </div>
-//   );
 return (
   <div className="h-screen bg-[#02030a] text-white flex flex-col">
 
@@ -1405,6 +1216,11 @@ return (
             className={`cursor-pointer ${activeTab === "chat" ? "text-blue-400 border-b border-blue-400 pb-1" : "text-gray-400"} relative`}>
             chat
             {globalUnread > 0 && <span className="absolute -top-2 -right-4 bg-blue-500 text-white text-[9px] px-1.5 rounded-full font-bold">{globalUnread}</span>}
+          </span>
+          <span 
+            onClick={() => setActiveTab("calls")} 
+            className={`cursor-pointer ${activeTab === "calls" ? "text-blue-400 border-b border-blue-400 pb-1" : "text-gray-400"}`}>
+            calls
           </span>
         </div>
       </div>
@@ -1599,21 +1415,69 @@ return (
              </table>
           </div>
         </div>
-      ) : null}
-      
-      {/* VaultChat rendered persistently to allow background notifications */}
-      <div style={{ display: activeTab === "chat" ? "block" : "none", height: "calc(100vh - 130px)" }}>
-        <VaultChat 
-           vaultId={vault._id} 
-           vault={vault} 
-           setShowInvite={setShowInvite} 
-           isActive={activeTab === "chat"} 
-           onUnreadChange={setGlobalUnread}
-           onOnlineUsersChange={setOnlineUsers}
-           onNewToast={(msg) => {
-              setToastMessage(msg);
-              setTimeout(() => setToastMessage(null), 3000);
-           }}
+      ) : activeTab === "chat" ? (
+        <div style={{ height: "calc(100vh - 130px)" }}>
+          <VaultChat 
+             vaultId={vault._id} 
+             vault={vault} 
+             setShowInvite={setShowInvite} 
+             isActive={activeTab === "chat"} 
+             onUnreadChange={setGlobalUnread}
+             onOnlineUsersChange={setOnlineUsers}
+             onNewToast={(msg) => {
+                setToastMessage(msg);
+                setTimeout(() => setToastMessage(null), 3000);
+             }}
+          />
+        </div>
+      ) : activeTab === "calls" ? (
+        <div className="flex-1 flex flex-col p-6 bg-[#02030a]">
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h2 className="text-2xl font-bold">Secure Team Calls</h2>
+              <p className="text-sm text-gray-500">Scheduled and instant end-to-end encrypted video sessions</p>
+            </div>
+            <button 
+              onClick={() => setActiveTab("in-call")}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center gap-2"
+            >
+              <span>+</span> Start Instant Call
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="p-6 bg-[#06080f] border border-white/5 rounded-2xl flex flex-col gap-4">
+              <div className="flex justify-between items-start">
+                <div className="p-3 bg-purple-500/10 rounded-xl text-purple-400">
+                  <span className="text-xl">📅</span>
+                </div>
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest bg-white/5 px-2 py-1 rounded">Scheduled</span>
+              </div>
+              <div>
+                <h3 className="font-bold text-lg">Weekly Security Sprint</h3>
+                <p className="text-xs text-gray-500 mt-1">Today at 4:30 PM • 12 Attendees</p>
+              </div>
+              <button className="w-full py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-semibold transition-all">Set Reminder</button>
+            </div>
+            
+            <div className="p-6 bg-[#06080f] border border-white/5 rounded-2xl flex flex-col gap-4 opacity-50 grayscale hover:grayscale-0 hover:opacity-100 transition-all cursor-pointer">
+              <div className="flex justify-between items-start">
+                <div className="p-3 bg-blue-500/10 rounded-xl text-blue-400">
+                  <span className="text-xl">📞</span>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-bold text-lg">Start a New Meeting</h3>
+                <p className="text-xs text-gray-500 mt-1">Generate a secure link to share with anyone</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : activeTab === "in-call" ? (
+        <TeamCall 
+          vaultId={id} 
+          vault={vault} 
+          onLeave={() => setActiveTab("calls")} 
         />
       </div>
     </div>
@@ -1654,6 +1518,7 @@ return (
           >
             <option>Viewer</option>
             <option>Editor</option>
+            <option>Developer</option>
             <option>Admin</option>
             <option>Security Auditor</option>
           </select>
