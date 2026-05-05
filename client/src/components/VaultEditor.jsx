@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import Editor from "@monaco-editor/react";
 import axios from "axios";
 import forge from "node-forge";
@@ -9,31 +9,36 @@ import {
   Download, 
   Save, 
   RotateCcw, 
-  ChevronRight, 
   ChevronDown,
   Code,
-  File,
   X,
   Plus
 } from "lucide-react";
-import JSZip from "jszip";
+import * as JSZip from "jszip";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export default function VaultEditor({ vaultId, vault, userId, onRefresh }) {
+  console.log("VaultEditor Rendering...");
   const [files, setFiles] = useState([]);
   const [activeFile, setActiveFile] = useState(null);
   const [editorContent, setEditorContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [chatKey, setChatKey] = useState(null);
+  const [debugError, setDebugError] = useState(null);
 
   useEffect(() => {
-    if (vault?.files) {
-      // Filter for code-like files or just show all as editable
-      setFiles(vault.files);
+    try {
+      if (vault?.files) {
+        setFiles(vault.files);
+      }
+    } catch (e) {
+      setDebugError("Vault data error: " + e.message);
     }
   }, [vault]);
+
+  if (debugError) return <div className="p-10 text-red-500">Editor Error: {debugError}</div>;
 
   useEffect(() => {
     const initKey = async () => {
