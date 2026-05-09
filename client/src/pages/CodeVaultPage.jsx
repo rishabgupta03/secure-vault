@@ -295,8 +295,25 @@ export default function CodeVaultPage() {
       formData.append("userId", userId);
       formData.append("encryptedKey", encryptedAesKey);
 
-      await axios.post(`${API_URL}/api/upload`, formData);
+      const res = await axios.post(`${API_URL}/api/upload`, formData);
       toast(`${isFolder ? "Folder" : "File"} created`);
+      
+      // SHARE WITH ALL EXISTING MEMBERS
+      if (vault?.members) {
+        for (const member of vault.members) {
+          if (member.userId === userId) continue;
+          try {
+            const memberRes = await axios.get(`${API_URL}/api/user/${member.userId}`);
+            const memberPubKey = forge.pki.publicKeyFromPem(memberRes.data.publicKey);
+            const memberEncKey = forge.util.encode64(memberPubKey.encrypt(aesKeyStr, "RSA-OAEP"));
+            await axios.post(`${API_URL}/api/share-file-key`, {
+              fileId: res.data.file._id,
+              targetUserId: member.userId,
+              encryptedKey: memberEncKey
+            });
+          } catch(err) { console.error("Failed to share key with member", member.userId); }
+        }
+      }
       fetchVault();
     } catch (err) {
       console.error(err);
@@ -332,12 +349,29 @@ export default function CodeVaultPage() {
       formData.append("vaultId", id);
       formData.append("userId", userId);
       formData.append("encryptedKey", encryptedAesKey);
-      await axios.post(`${API_URL}/api/upload`, formData);
-      fetchVault();
+      
+      const res = await axios.post(`${API_URL}/api/upload`, formData);
       toast(`Uploaded ${file.name}`);
+
+      // SHARE WITH ALL EXISTING MEMBERS
+      if (vault?.members) {
+        for (const member of vault.members) {
+          if (member.userId === userId) continue;
+          try {
+            const memberRes = await axios.get(`${API_URL}/api/user/${member.userId}`);
+            const memberPubKey = forge.pki.publicKeyFromPem(memberRes.data.publicKey);
+            const memberEncKey = forge.util.encode64(memberPubKey.encrypt(aesKeyStr, "RSA-OAEP"));
+            await axios.post(`${API_URL}/api/share-file-key`, {
+              fileId: res.data.file._id,
+              targetUserId: member.userId,
+              encryptedKey: memberEncKey
+            });
+          } catch(err) { console.error("Failed to share key with member", member.userId); }
+        }
+      }
+      fetchVault();
     } catch (err) {
-      console.error(err);
-      toast("Upload failed");
+      toast("Upload failed. " + err.message);
     }
   };
 
@@ -499,6 +533,34 @@ export default function CodeVaultPage() {
         email: inviteEmail,
         role: inviteRole
       });
+      
+      // Share keys for existing files with the new user
+      try {
+        const targetUserRes = await axios.get(`${API_URL}/api/user-by-email/${inviteEmail}`);
+        const targetUserId = targetUserRes.data._id;
+        const targetPublicKey = forge.pki.publicKeyFromPem(targetUserRes.data.publicKey);
+        
+        const privateKeyPem = localStorage.getItem("privateKey");
+        const privateKey = forge.pki.privateKeyFromPem(privateKeyPem);
+
+        for (const file of vault.files) {
+          try {
+            const keyRes = await axios.get(`${API_URL}/api/file-key/${file._id}/${userId}`);
+            const encryptedKeyBase64 = keyRes.data.encryptedKey;
+            if (!encryptedKeyBase64) continue;
+
+            const decryptedAESKey = privateKey.decrypt(forge.util.decode64(encryptedKeyBase64), "RSA-OAEP");
+            const newEncryptedKey = targetPublicKey.encrypt(decryptedAESKey, "RSA-OAEP");
+
+            await axios.post(`${API_URL}/api/share-file-key`, {
+              fileId: file._id,
+              targetUserId,
+              encryptedKey: forge.util.encode64(newEncryptedKey)
+            });
+          } catch(err) {}
+        }
+      } catch(err) { console.error("Failed to share keys with new member", err); }
+
       toast(`Invite sent to ${inviteEmail}`);
       setInviteEmail("");
       setShowInvite(false);
