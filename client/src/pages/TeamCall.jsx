@@ -54,6 +54,11 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
     initLocalStream();
     socket.emit("join_call", { vaultId, userId, userName });
 
+    socket.on("current_participants", (list) => {
+       // Filter out self if server sends it
+       setParticipants(list.filter(p => p.userId !== userId));
+    });
+
     socket.on("user_joined_call", (data) => {
        setParticipants(prev => {
           if (prev.find(p => p.userId === data.userId)) return prev;
@@ -73,7 +78,10 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
         });
         streamRef.current = null;
       }
-      if (localVideoRef.current) localVideoRef.current.srcObject = null;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+      socket.off("current_participants");
       socket.off("user_joined_call");
       socket.off("user_left_call");
       socket.emit("leave_call", { vaultId, userId });

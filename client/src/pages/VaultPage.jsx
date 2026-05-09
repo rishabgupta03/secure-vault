@@ -865,14 +865,18 @@ export default function VaultPage() {
       setNewMeetingTitle("");
       setNewMeetingTime("");
       fetchMeetings();
+      setToastMessage({ title: "Success", body: "Meeting scheduled successfully!" });
+      setTimeout(() => setToastMessage(null), 3000);
     } catch (err) {
-      alert("Failed to schedule meeting");
+      console.error(err);
+      setToastMessage({ title: "Error", body: "Failed to schedule meeting" });
+      setTimeout(() => setToastMessage(null), 3000);
     }
   };
 
   const startInstantCall = () => {
-    // Get latest name from profile if available
-    const myName = localStorage.getItem("userName") || "A teammate";
+    // Get latest name from profile or localStorage
+    const myName = profile?.name || localStorage.getItem("userName") || "A teammate";
     
     socket.emit("start_call", {
       vaultId: id,

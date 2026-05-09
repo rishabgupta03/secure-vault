@@ -1110,6 +1110,9 @@ app.post("/api/vault/:vaultId/meetings", async (req, res) => {
 // ================= SOCKET.IO =================
 const userSockets = new Map(); // userId -> Set(socketIds)
 
+// --- CALL TRACKING ---
+const callParticipants = new Map(); // vaultId -> Map(userId -> {userName, socketId})
+
 io.on("connection", (socket) => {
   console.log("User connected to socket:", socket.id);
 
@@ -1122,41 +1125,50 @@ io.on("connection", (socket) => {
     io.emit("online_users_update", Array.from(userSockets.keys()));
   });
 
-  socket.on("get_online_users", () => {
-    socket.emit("online_users_update", Array.from(userSockets.keys()));
-  });
-
-  socket.on("join_channel", (channelId) => {
-    socket.join(channelId);
-  });
-
-  socket.on("send_message", async (data) => {
-    // data: { channelId, vaultId, senderId, encryptedContent, iv, tag }
-    try {
-      const msg = await ChatMessage.create(data);
-      io.to(data.channelId).emit("new_message", msg);
-    } catch(err) {
-      console.error(err);
+  // --- CALL EVENTS ---
+  socket.on("join_call", (data) => {
+    const { vaultId, userId, userName } = data;
+    socket.join(`call_${vaultId}`);
+    
+    if (!callParticipants.has(vaultId)) {
+      callParticipants.set(vaultId, new Map());
     }
+    callParticipants.get(vaultId).set(userId, { userName, socketId: socket.id });
+    
+    // Send current participant list to the joiner
+    const currentParticipants = Array.from(callParticipants.get(vaultId).values());
+    socket.emit("current_participants", currentParticipants);
+    
+    // Notify others
+    socket.to(`call_${vaultId}`).emit("user_joined_call", data);
   });
 
-  socket.on("typing", (data) => {
-    socket.to(data.channelId).emit("typing", data);
+  socket.on("start_call", (data) => {
+    io.emit("incoming_call_alert", data);
   });
-  
-  socket.on("mark_read", async (data) => {
-    try {
-      await ChatMessage.updateMany(
-        { channelId: data.channelId, readBy: { $ne: data.userId } },
-        { $push: { readBy: data.userId } }
-      );
-      io.to(data.channelId).emit("message_read", data);
-    } catch(err) {}
+
+  socket.on("leave_call", (data) => {
+    const { vaultId, userId } = data;
+    if (callParticipants.has(vaultId)) {
+      callParticipants.get(vaultId).delete(userId);
+      if (callParticipants.get(vaultId).size === 0) {
+        callParticipants.delete(vaultId);
+      }
+    }
+    socket.to(`call_${vaultId}`).emit("user_left_call", data);
+    socket.leave(`call_${vaultId}`);
   });
 
   socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
     if (socket.userId && userSockets.has(socket.userId)) {
+      // Remove from call tracking if they were in a call
+      callParticipants.forEach((participants, vaultId) => {
+        if (participants.has(socket.userId)) {
+          participants.delete(socket.userId);
+          socket.to(`call_${vaultId}`).emit("user_left_call", { userId: socket.userId });
+        }
+      });
+
       const sockets = userSockets.get(socket.userId);
       sockets.delete(socket.id);
       if (sockets.size === 0) {
@@ -1164,22 +1176,6 @@ io.on("connection", (socket) => {
       }
       io.emit("online_users_update", Array.from(userSockets.keys()));
     }
-  });
-
-  // --- CALL EVENTS ---
-  socket.on("join_call", (data) => {
-    socket.join(`call_${data.vaultId}`);
-    socket.to(`call_${data.vaultId}`).emit("user_joined_call", data);
-  });
-
-  socket.on("start_call", (data) => {
-    // data: { vaultId, callerId, callerName, vaultName }
-    io.emit("incoming_call_alert", data); // Alert everyone (or filter by vault members client-side)
-  });
-
-  socket.on("leave_call", (data) => {
-    socket.to(`call_${data.vaultId}`).emit("user_left_call", data);
-    socket.leave(`call_${data.vaultId}`);
   });
 });
 
