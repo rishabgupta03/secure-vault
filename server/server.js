@@ -457,6 +457,60 @@ app.post("/api/upload-file", upload.single("file"), async (req, res) => {
   }
 });
 
+// ================= CLIENT-SIDE ENCRYPTED UPLOAD (ZERO-TRUST) =================
+app.post("/api/upload", upload.single("file"), async (req, res) => {
+  try {
+    const { vaultId, userId, encryptedKey } = req.body;
+    const file = req.file;
+
+    if (!file) return res.status(400).json({ message: "No file uploaded" });
+
+    const vault = await Vault.findById(vaultId);
+    if (!vault) return res.status(404).json({ message: "Vault not found" });
+
+    const member = vault.members.find(m => m.userId === userId);
+    const role = vault.userId === userId ? "owner" : (member?.role || "").toLowerCase();
+    if (!hasPermission(role, "upload")) {
+      return res.status(403).json({ message: "Permission denied" });
+    }
+
+    const fileId = new mongoose.Types.ObjectId().toString();
+    const filename = `${fileId}-${file.originalname}`;
+    const filepath = path.join(UPLOAD_DIR, filename);
+
+    // Save the encrypted blob directly (Zero-Trust)
+    fs.writeFileSync(filepath, file.buffer);
+
+    const newFile = {
+      _id: fileId,
+      name: file.originalname,
+      size: file.size,
+      key: filename,
+      uploadedBy: userId,
+      createdAt: new Date()
+    };
+
+    vault.files.push(newFile);
+    vault.storageUsed += file.size;
+    vault.activity.push({ action: `Uploaded ${file.originalname}`, userId });
+    await vault.save();
+
+    // Store the encrypted AES key provided by the client
+    await FileKey.create({
+      fileId,
+      userId,
+      encryptedKey
+    });
+
+    await createLog(vaultId, userId, "UPLOAD_FILE", `Securely uploaded ${file.originalname}`, role, fileId);
+
+    res.status(201).json({ message: "Secure upload complete", file: newFile });
+  } catch (err) {
+    console.error("SECURE UPLOAD ERROR:", err);
+    res.status(500).json({ message: "Upload failed" });
+  }
+});
+
 // ================= UPDATE FILE =================
 app.get("/api/logs", async (req, res) => {
   try {
