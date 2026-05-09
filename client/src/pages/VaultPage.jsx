@@ -830,47 +830,53 @@ export default function VaultPage() {
   useEffect(() => {
     socket.emit("user_connected", userId);
     
-    socket.on("incoming_call_alert", (data) => {
-      // Only show if user is a member of the vault
-      if (vault && vault.members.some(m => m.userId === userId)) {
-        if (data.vaultId === id && data.callerId !== userId) {
-          setIncomingCall(data);
-          // Auto-hide after 15 seconds
-          setTimeout(() => setIncomingCall(null), 15000);
-        }
+    // Listen for incoming call alerts - show if caller is not self
+    const handleIncomingCall = (data) => {
+      if (data.callerId !== userId) {
+        setIncomingCall(data);
+        setTimeout(() => setIncomingCall(null), 20000);
       }
-    });
+    };
 
-    socket.on("meeting_scheduled", (data) => {
+    const handleMeetingScheduled = (data) => {
       if (data.vaultId === id) {
         fetchMeetings();
       }
-    });
+    };
+
+    socket.on("incoming_call_alert", handleIncomingCall);
+    socket.on("meeting_scheduled", handleMeetingScheduled);
 
     return () => {
-      socket.off("incoming_call_alert");
-      socket.off("meeting_scheduled");
+      socket.off("incoming_call_alert", handleIncomingCall);
+      socket.off("meeting_scheduled", handleMeetingScheduled);
     };
-  }, [id, vault, userId]);
+  }, [id, userId]);
 
   const scheduleMeeting = async () => {
+    if (!newMeetingTitle.trim() || !newMeetingTime) {
+      setToastMessage({ title: "Error", body: "Please enter a title and select a time" });
+      setTimeout(() => setToastMessage(null), 3000);
+      return;
+    }
     try {
-      if (!newMeetingTitle || !newMeetingTime) return alert("Please fill all fields");
+      // Convert datetime-local value to proper ISO string
+      const isoTime = new Date(newMeetingTime).toISOString();
       await axios.post(`${API_URL}/api/vault/${id}/meetings`, {
-        title: newMeetingTitle,
-        startTime: newMeetingTime,
+        title: newMeetingTitle.trim(),
+        startTime: isoTime,
         scheduledBy: userId
       });
       setShowScheduleModal(false);
       setNewMeetingTitle("");
       setNewMeetingTime("");
       fetchMeetings();
-      setToastMessage({ title: "Success", body: "Meeting scheduled successfully!" });
-      setTimeout(() => setToastMessage(null), 3000);
+      setToastMessage({ title: "✅ Meeting Scheduled", body: `"${newMeetingTitle.trim()}" has been saved.` });
+      setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
-      console.error(err);
-      setToastMessage({ title: "Error", body: "Failed to schedule meeting" });
-      setTimeout(() => setToastMessage(null), 3000);
+      console.error("Schedule error:", err);
+      setToastMessage({ title: "❌ Failed", body: err.response?.data?.message || "Could not schedule meeting" });
+      setTimeout(() => setToastMessage(null), 4000);
     }
   };
 

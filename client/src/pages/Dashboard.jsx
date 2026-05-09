@@ -172,21 +172,25 @@ export default function Dashboard() {
     } catch (err) {}
   };
 
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 10000);
     return () => clearInterval(interval);
   }, [userId]);
 
   useEffect(() => {
     socket.emit("user_connected", userId);
     
-    socket.on("incoming_call_alert", (data) => {
+    const handleIncomingCall = (data) => {
       if (data.callerId !== userId) {
         setIncomingCall(data);
-        setTimeout(() => setIncomingCall(null), 15000);
+        setTimeout(() => setIncomingCall(null), 20000);
       }
-    });
+    };
+    socket.on("incoming_call_alert", handleIncomingCall);
 
     return () => {
-      socket.off("incoming_call_alert");
+      socket.off("incoming_call_alert", handleIncomingCall);
     };
   }, [userId]);
 

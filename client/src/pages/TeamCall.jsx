@@ -227,7 +227,19 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
           </button>
 
           <button 
-            onClick={onLeave}
+            onClick={() => {
+              // Force stop all tracks immediately
+              if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => {
+                  track.stop();
+                });
+                streamRef.current = null;
+              }
+              if (localVideoRef.current) {
+                localVideoRef.current.srcObject = null;
+              }
+              onLeave();
+            }}
             className="ml-4 px-8 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl flex items-center gap-3 font-bold transition-all shadow-lg shadow-red-600/20"
           >
             <PhoneOff size={22} />
