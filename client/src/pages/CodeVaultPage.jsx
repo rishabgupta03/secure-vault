@@ -231,21 +231,27 @@ export default function CodeVaultPage() {
   // ===== ZIP =====
   const downloadZip = async () => {
     try {
-      const zip = new (JSZip.default || JSZip)();
+      const JSZipModule = await import("jszip");
+      const JSZipConstructor = JSZipModule.default || JSZipModule;
+      const zip = new JSZipConstructor();
       const folder = zip.folder(vault?.name || "project");
-    toast("Preparing ZIP...");
-    for (const file of files) {
-      try {
-        const content = await decryptFileContent(file);
-        folder.file(file.name, content);
-      } catch (e) { console.error("Zip err:", file.name, e); }
+      toast("Preparing ZIP...");
+      for (const file of files) {
+        try {
+          const content = await decryptFileContent(file);
+          folder.file(file.name, content);
+        } catch (e) { console.error("Zip err:", file.name, e); }
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${vault?.name || "project"}.zip`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (err) {
+      console.error(err);
+      toast("Failed to create ZIP");
     }
-    const blob = await zip.generateAsync({ type: "blob" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `${vault?.name || "project"}.zip`;
-    link.click();
-    URL.revokeObjectURL(link.href);
   };
 
   // ===== RESTORE VERSION =====
@@ -374,9 +380,9 @@ export default function CodeVaultPage() {
   const inviteUser = async () => {
     if (!inviteEmail) return toast("Email required");
     try {
-      await axios.post(`${API_URL}/api/invite-to-vault`, {
+      await axios.post(`${API_URL}/api/share-vault`, {
         vaultId: id,
-        userId,
+        addedBy: userId,
         email: inviteEmail,
         role: inviteRole
       });

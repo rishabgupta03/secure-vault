@@ -482,10 +482,11 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
     fs.writeFileSync(filepath, file.buffer);
 
     const newFile = {
-      _id: fileId,
+      _id: new mongoose.Types.ObjectId(fileId),
       name: file.originalname,
       size: file.size,
       key: filename,
+      encrypted: true,
       uploadedBy: userId,
       createdAt: new Date()
     };
