@@ -644,14 +644,12 @@
 import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import forge from "node-forge";
-import { io } from "socket.io-client";
+import socket from "../socket";
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import * as Diff from 'diff';
 import VaultChat from "./VaultChat";
 import TeamCall from "./TeamCall";
-
-const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
 
 import {
   Users as UsersIcon,
@@ -832,7 +830,8 @@ export default function VaultPage() {
     
     // Listen for incoming call alerts - show if caller is not self
     const handleIncomingCall = (data) => {
-      if (data.callerId !== userId) {
+      // Only show if I'm not the caller AND it's for THIS vault
+      if (data.callerId !== userId && data.vaultId === id) {
         setIncomingCall(data);
         setTimeout(() => setIncomingCall(null), 20000);
       }
@@ -869,9 +868,9 @@ export default function VaultPage() {
       });
       setShowScheduleModal(false);
       setNewMeetingTitle("");
+      setNewMeetingTitle("");
       setNewMeetingTime("");
-      fetchMeetings();
-      setToastMessage({ title: "✅ Meeting Scheduled", body: `"${newMeetingTitle.trim()}" has been saved.` });
+      setToastMessage({ title: "📅 Meeting Scheduled", body: `"${newMeetingTitle.trim()}" has been saved.` });
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
       console.error("Schedule error:", err);

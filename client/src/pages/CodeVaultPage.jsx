@@ -15,8 +15,9 @@ import {
   Eye, Clock, Zap, Terminal, UserPlus, Send, MessageCircle
 } from "lucide-react";
 
+import socket from "../socket";
+
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const socket = io(API_URL);
 
 const LANG_MAP = {
   js:"javascript",jsx:"javascript",ts:"typescript",tsx:"typescriptreact",

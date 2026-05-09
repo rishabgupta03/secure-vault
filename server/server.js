@@ -1315,6 +1315,30 @@ io.on("connection", (socket) => {
     socket.leave(`call_${vaultId}`);
   });
 
+  socket.on("webrtc_offer", (data) => {
+    // Send to specific user
+    socket.to(data.targetSocketId).emit("webrtc_offer", {
+      offer: data.offer,
+      callerId: data.callerId,
+      callerName: data.callerName,
+      callerSocketId: socket.id
+    });
+  });
+
+  socket.on("webrtc_answer", (data) => {
+    socket.to(data.targetSocketId).emit("webrtc_answer", {
+      answer: data.answer,
+      senderSocketId: socket.id
+    });
+  });
+
+  socket.on("webrtc_ice_candidate", (data) => {
+    socket.to(data.targetSocketId).emit("webrtc_ice_candidate", {
+      candidate: data.candidate,
+      senderSocketId: socket.id
+    });
+  });
+
   // --- EDITOR COLLABORATION EVENTS ---
   socket.on("join_editor", (data) => {
     const { vaultId, fileId, userId, userName } = data;

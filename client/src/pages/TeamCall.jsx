@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import { io } from "socket.io-client";
+import socket from "../socket";
 import {
   Mic, MicOff, Video, VideoOff, Monitor, Users, MessageSquare, 
   Settings, PhoneOff, ShieldCheck, Maximize, MoreHorizontal,
-  Clock, Lock, CheckCircle2, PhoneIcon
+  Clock, Lock, CheckCircle2, Phone as PhoneIcon
 } from "lucide-react";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const socket = io(API_URL);
 
 export default function TeamCall({ vaultId, vault, onLeave }) {
   const userId = localStorage.getItem("userId");
@@ -19,74 +16,150 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const localVideoRef = useRef(null);
   const streamRef = useRef(null);
-  const [participants, setParticipants] = useState([]);
+  const [participants, setParticipants] = useState([]); // Array of { userId, userName, socketId }
   const [callDuration, setCallDuration] = useState(0);
-  
+  const peersRef = useRef({}); // socketId -> RTCPeerConnection
+  const [remoteStreams, setRemoteStreams] = useState({}); // socketId -> MediaStream
+
+  // WebRTC Config
+  const rtcConfig = {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" }
+    ]
+  };
+
   // Timer logic
   useEffect(() => {
     const timer = setInterval(() => setCallDuration(prev => prev + 1), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  const createPeerConnection = (targetSocketId, isCaller) => {
+    const pc = new RTCPeerConnection(rtcConfig);
+
+    // Handle ICE Candidates
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit("webrtc_ice_candidate", {
+          targetSocketId,
+          candidate: event.candidate
+        });
+      }
+    };
+
+    // Handle Remote Stream
+    pc.ontrack = (event) => {
+      setRemoteStreams(prev => ({
+        ...prev,
+        [targetSocketId]: event.streams[0]
+      }));
+    };
+
+    // Add local tracks to peer connection
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, streamRef.current);
+      });
+    }
+
+    peersRef.current[targetSocketId] = pc;
+    return pc;
   };
 
-  // WebRTC Initialization
   useEffect(() => {
-    const initLocalStream = async () => {
+    const initCall = async () => {
       try {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-          video: true, 
-          audio: true 
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        streamRef.current = stream;
+        if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
+        socket.emit("join_call", { vaultId, userId, userName });
+
+        socket.on("current_participants", async (list) => {
+          const others = list.filter(p => p.socketId !== socket.id);
+          setParticipants(others);
+          
+          // If we are joining, we start the offer to everyone already there
+          for (const p of others) {
+            const pc = createPeerConnection(p.socketId, true);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit("webrtc_offer", {
+              targetSocketId: p.socketId,
+              offer,
+              callerId: userId,
+              callerName: userName
+            });
+          }
         });
-        streamRef.current = mediaStream;
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = mediaStream;
-        }
+
+        socket.on("user_joined_call", (data) => {
+          setParticipants(prev => {
+            if (prev.find(p => p.socketId === data.socketId)) return prev;
+            return [...prev, data];
+          });
+        });
+
+        socket.on("webrtc_offer", async (data) => {
+          const pc = createPeerConnection(data.callerSocketId, false);
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          socket.emit("webrtc_answer", {
+            targetSocketId: data.callerSocketId,
+            answer
+          });
+        });
+
+        socket.on("webrtc_answer", async (data) => {
+          const pc = peersRef.current[data.senderSocketId];
+          if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+          }
+        });
+
+        socket.on("webrtc_ice_candidate", async (data) => {
+          const pc = peersRef.current[data.senderSocketId];
+          if (pc) {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        });
+
+        socket.on("user_left_call", (data) => {
+          if (peersRef.current[data.socketId]) {
+            peersRef.current[data.socketId].close();
+            delete peersRef.current[data.socketId];
+          }
+          setParticipants(prev => prev.filter(p => p.socketId !== data.socketId));
+          setRemoteStreams(prev => {
+            const next = { ...prev };
+            delete next[data.socketId];
+            return next;
+          });
+        });
       } catch (err) {
-        console.error("Error accessing media devices:", err);
+        console.error("Call init error:", err);
       }
     };
 
-    initLocalStream();
-    socket.emit("join_call", { vaultId, userId, userName });
-
-    socket.on("current_participants", (list) => {
-       // Filter out self if server sends it
-       setParticipants(list.filter(p => p.userId !== userId));
-    });
-
-    socket.on("user_joined_call", (data) => {
-       setParticipants(prev => {
-          if (prev.find(p => p.userId === data.userId)) return prev;
-          return [...prev, data];
-       });
-    });
-
-    socket.on("user_left_call", (data) => {
-       setParticipants(prev => prev.filter(p => p.userId !== data.userId));
-    });
+    initCall();
 
     return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => {
-          track.stop();
-          track.enabled = false;
-        });
-        streamRef.current = null;
-      }
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = null;
-      }
       socket.off("current_participants");
       socket.off("user_joined_call");
+      socket.off("webrtc_offer");
+      socket.off("webrtc_answer");
+      socket.off("webrtc_ice_candidate");
       socket.off("user_left_call");
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
+      Object.values(peersRef.current).forEach(pc => pc.close());
       socket.emit("leave_call", { vaultId, userId });
     };
-  }, [vaultId, userId, userName]);
+  }, [vaultId, userId]);
 
   return (
     <div className="fixed inset-0 z-[100] bg-[#02040a] text-white flex flex-col font-sans overflow-hidden">
@@ -149,14 +222,7 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
           {/* Remote Participants */}
           {participants.map((p, idx) => (
             <div key={idx} className="relative group rounded-2xl overflow-hidden bg-[#0d1117] border border-white/5">
-              <div className="absolute inset-0 flex items-center justify-center bg-[#0d1117]">
-                <div className="w-24 h-24 rounded-full bg-purple-600 flex items-center justify-center text-3xl font-bold animate-pulse">
-                  {p.userName.substring(0,1).toUpperCase()}
-                </div>
-              </div>
-              <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10">
-                 <span className="text-xs font-semibold">{p.userName}</span>
-              </div>
+              <RemoteVideo stream={remoteStreams[p.socketId]} userName={p.userName} />
               <div className="absolute top-4 right-4 bg-black/40 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest text-white/70 border border-white/5">
                 Connected
               </div>
@@ -251,4 +317,42 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
 
     </div>
   );
+}
+
+// Helper component for remote video streams
+function RemoteVideo({ stream, userName }) {
+  const videoRef = useRef();
+
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  return (
+    <>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        className={`w-full h-full object-cover ${!stream ? 'hidden' : ''}`}
+      />
+      {!stream && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#0d1117]">
+          <div className="w-24 h-24 rounded-full bg-purple-600 flex items-center justify-center text-3xl font-bold animate-pulse">
+            {userName.substring(0, 1).toUpperCase()}
+          </div>
+        </div>
+      )}
+      <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10">
+        <span className="text-xs font-semibold">{userName}</span>
+      </div>
+    </>
+  );
+}
+
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }

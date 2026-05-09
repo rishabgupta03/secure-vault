@@ -11,10 +11,8 @@ import {
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import forge from "node-forge";
-import { io } from "socket.io-client";
+import socket from "../socket";
 import { Phone as PhoneIcon } from "lucide-react";
-
-const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -183,7 +181,8 @@ export default function Dashboard() {
     socket.emit("user_connected", userId);
     
     const handleIncomingCall = (data) => {
-      if (data.callerId !== userId) {
+      // Only show if I'm not the caller AND I'm a member of this vault
+      if (data.callerId !== userId && vaults.find(v => v._id === data.vaultId)) {
         setIncomingCall(data);
         setTimeout(() => setIncomingCall(null), 20000);
       }
@@ -193,7 +192,7 @@ export default function Dashboard() {
     return () => {
       socket.off("incoming_call_alert", handleIncomingCall);
     };
-  }, [userId]);
+  }, [userId, vaults]);
 
   useEffect(() => {
     const fetchMemberNames = async () => {
