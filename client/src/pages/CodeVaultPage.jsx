@@ -747,9 +747,7 @@ export default function CodeVaultPage() {
           </div>
 
           {/* Code Runner Terminal */}
-          {activeTab && (
-            <CodeRunner code={activeTab.content} fileName={activeTab.name} isOpen={showTerminal} onToggle={() => setShowTerminal(!showTerminal)} />
-          )}
+          <CodeRunner isOpen={showTerminal} onToggle={() => setShowTerminal(!showTerminal)} />
         </div>
 
         {/* CHAT PANEL */}
