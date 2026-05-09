@@ -11,7 +11,7 @@ import {
   FileCode, Folder, History, Download, Save, RotateCcw, X, Plus,
   Code, Lock, Users, MessageSquare, ChevronDown, ChevronRight,
   Play, GitBranch, Shield, Activity, Search, Settings, Menu,
-  Eye, Clock, Zap, Terminal
+  Eye, Clock, Zap, Terminal, UserPlus, Send, MessageCircle
 } from "lucide-react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -48,6 +48,9 @@ export default function CodeVaultPage() {
   const [toastMsg, setToastMsg] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("Developer");
 
   const editorRef = useRef(null);
   const aesKeysRef = useRef({}); // fileId -> aesKey
@@ -255,6 +258,25 @@ export default function CodeVaultPage() {
       toast("Version restored");
     } catch { toast("Restore failed"); }
   };
+  
+  // ===== INVITE =====
+  const inviteUser = async () => {
+    if (!inviteEmail) return toast("Email required");
+    try {
+      await axios.post(`${API_URL}/api/invite-to-vault`, {
+        vaultId: id,
+        userId,
+        email: inviteEmail,
+        role: inviteRole
+      });
+      toast(`Invite sent to ${inviteEmail}`);
+      setInviteEmail("");
+      setShowInvite(false);
+      fetchVault();
+    } catch (err) {
+      toast(err.response?.data?.message || "Invite failed");
+    }
+  };
 
   // ===== EDITOR HANDLERS =====
   const handleEditorMount = (editor) => { editorRef.current = editor; };
@@ -302,8 +324,15 @@ export default function CodeVaultPage() {
             ))}
             <div className="text-[10px] text-gray-500 ml-1">{onlineCount}/{memberCount} online</div>
           </div>
-          <button onClick={() => setShowChat(!showChat)} className="text-gray-500 hover:text-white"><MessageSquare size={16} /></button>
-          <button onClick={downloadZip} className="text-gray-500 hover:text-white" title="Download ZIP"><Download size={16} /></button>
+          <button 
+            onClick={() => setShowInvite(true)} 
+            className="flex items-center gap-1.5 px-3 py-1 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-lg transition-all text-[11px] font-bold"
+          >
+            <UserPlus size={14} /> Invite
+          </button>
+          <div className="h-4 w-px bg-white/10 mx-1" />
+          <button onClick={() => setShowChat(!showChat)} className={`p-2 rounded-lg transition-colors ${showChat ? "bg-blue-500/20 text-blue-400" : "text-gray-500 hover:text-white hover:bg-white/5"}`}><MessageSquare size={16} /></button>
+          <button onClick={downloadZip} className="p-2 text-gray-500 hover:text-white hover:bg-white/5 rounded-lg transition-colors" title="Download ZIP"><Download size={16} /></button>
         </div>
       </div>
 
@@ -456,17 +485,92 @@ export default function CodeVaultPage() {
 
         {/* CHAT PANEL */}
         {showChat && (
-          <div className="w-80 border-l border-white/5 flex flex-col bg-[#06080f]">
-            <div className="h-9 flex items-center justify-between px-3 border-b border-white/5">
-              <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase">Chat</span>
-              <X size={14} className="cursor-pointer text-gray-500 hover:text-white" onClick={() => setShowChat(false)} />
+          <div className="w-96 border-l border-white/5 flex flex-col bg-[#080a12] shrink-0 animate-slide-in-right h-full overflow-hidden shadow-2xl z-20">
+            <div className="h-11 flex items-center justify-between px-4 border-b border-white/5 bg-[#06080f]">
+              <div className="flex items-center gap-2">
+                <MessageCircle size={16} className="text-blue-400" />
+                <span className="text-[11px] font-black tracking-widest text-white uppercase">Vault Chat</span>
+              </div>
+              <button onClick={() => setShowChat(false)} className="p-1.5 text-gray-500 hover:text-white hover:bg-white/5 rounded-md transition-colors">
+                <X size={16} />
+              </button>
             </div>
-            <div style={{ height: "calc(100% - 36px)" }}>
-              <VaultChat vaultId={id} vault={vault} setShowInvite={() => {}} isActive={showChat} onUnreadChange={() => {}} onOnlineUsersChange={setOnlineUsers} onNewToast={() => {}} />
+            <div className="flex-1 overflow-hidden">
+              <VaultChat 
+                vaultId={id} 
+                vault={vault} 
+                setShowInvite={setShowInvite} 
+                isActive={showChat} 
+                onUnreadChange={() => {}} 
+                onOnlineUsersChange={setOnlineUsers} 
+                onNewToast={toast} 
+                compact={true}
+              />
             </div>
           </div>
         )}
       </div>
+
+      {/* INVITE MODAL */}
+      {showInvite && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in">
+          <div className="bg-[#0b0f1a] w-full max-w-md rounded-3xl border border-white/10 p-8 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400 border border-blue-500/20">
+                  <UserPlus size={20} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Invite Member</h2>
+                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Collaborate on {vault.name}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowInvite(false)} className="text-gray-500 hover:text-white p-2 hover:bg-white/5 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Member Email</label>
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+                  <input
+                    placeholder="Enter collaborator email..."
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 py-4 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Assign Role</label>
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-4 outline-none focus:border-blue-500 transition-all text-sm appearance-none cursor-pointer"
+                >
+                  <option className="bg-[#0b0f1a]">Viewer</option>
+                  <option className="bg-[#0b0f1a]">Editor</option>
+                  <option className="bg-[#0b0f1a]">Developer</option>
+                  <option className="bg-[#0b0f1a]">Admin</option>
+                  <option className="bg-[#0b0f1a]">Security Auditor</option>
+                </select>
+              </div>
+
+              <div className="pt-4">
+                <button
+                  onClick={inviteUser}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-600/20 active:scale-[0.98]"
+                >
+                  Send Invitation
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* STATUS BAR */}
       <div className="h-6 bg-[#06080f] border-t border-white/5 flex items-center justify-between px-4 text-[10px] text-gray-500 shrink-0">

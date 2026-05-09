@@ -7,7 +7,7 @@ import { Hash, Lock, Search, UserPlus, Info, Paperclip, Smile, Send, CheckCheck,
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const socket = io(API_URL);
 
-export default function VaultChat({ vaultId, vault, setShowInvite, isActive, onUnreadChange, onNewToast, onOnlineUsersChange }) {
+export default function VaultChat({ vaultId, vault, setShowInvite, isActive, onUnreadChange, onNewToast, onOnlineUsersChange, compact = false }) {
   const userId = localStorage.getItem("userId");
   const userName = localStorage.getItem("userName") || "User"; 
   
@@ -24,7 +24,7 @@ export default function VaultChat({ vaultId, vault, setShowInvite, isActive, onU
   const [unreadCounts, setUnreadCounts] = useState({});
 
   // UI Toggles
-  const [showDetailsPanel, setShowDetailsPanel] = useState(true);
+  const [showDetailsPanel, setShowDetailsPanel] = useState(!compact);
   const [activeDetailsTab, setActiveDetailsTab] = useState("DETAILS");
   const [showAllMembers, setShowAllMembers] = useState(false);
   const [showAllFiles, setShowAllFiles] = useState(false);
@@ -354,7 +354,8 @@ export default function VaultChat({ vaultId, vault, setShowInvite, isActive, onU
   return (
     <div className="flex h-full w-full text-white overflow-hidden bg-[#0b0f1a] font-sans">
       {/* 1. LEFT SIDEBAR - VAULT DIRECTORY */}
-      <div className="w-64 bg-[#06080f] border-r border-white/5 flex flex-col">
+      {!compact && (
+        <div className="w-64 bg-[#06080f] border-r border-white/5 flex flex-col">
         <div className="p-4 flex justify-between items-center border-b border-white/5">
           <h2 className="font-semibold text-lg flex items-center gap-2">
             <Lock size={16} className="text-blue-400" /> Vault Directory
@@ -410,6 +411,7 @@ export default function VaultChat({ vaultId, vault, setShowInvite, isActive, onU
           <p className="text-[10px] text-gray-400 leading-tight">All communications in this vault are encrypted locally before transit.</p>
         </div>
       </div>
+      )}
 
       {/* 2. MAIN CHAT FEED */}
       <div className="flex-1 flex flex-col bg-[#0b0f1a] relative">
