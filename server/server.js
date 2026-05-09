@@ -342,7 +342,6 @@ function encryptFile(buffer) {
   };
 }
 // UPLOAD FILE
-const FileKey = require("./models/FileKey");
 
 // 🔐 DYNAMIC ENCRYPTION (AES-256-GCM / RSA-AES HYBRID)
 function encryptFile(buffer, algorithm = "AES-256-GCM") {

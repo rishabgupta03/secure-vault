@@ -1513,7 +1513,20 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
+          </div>
         </div>
+      )}
+
+      {/* INCOMING CALL NOTIFICATION */}
+      {incomingCall && (
+        <IncomingCallOverlay 
+          incomingCall={incomingCall} 
+          onJoin={() => {
+            setIncomingCall(null);
+            navigate(`/vault/${incomingCall.vaultId}?tab=calls`);
+          }}
+          onIgnore={() => setIncomingCall(null)}
+        />
       )}
     </div>
   );
@@ -1612,18 +1625,6 @@ function VaultCard({ vault, userRole, onClick, timeAgo }) {
          {vault.pin && <Lock size={12} className="text-amber-500" title="PIN Protected" />}
          <MoreVertical size={14} className="text-gray-700 hover:text-white transition-colors" />
       </div>
-
-      {/* INCOMING CALL NOTIFICATION */}
-      {incomingCall && (
-        <IncomingCallOverlay 
-          incomingCall={incomingCall} 
-          onJoin={() => {
-            setIncomingCall(null);
-            navigate(`/vault/${incomingCall.vaultId}?tab=calls`);
-          }}
-          onIgnore={() => setIncomingCall(null)}
-        />
-      )}
     </div>
   );
 }
