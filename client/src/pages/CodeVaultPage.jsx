@@ -211,7 +211,8 @@ export default function CodeVaultPage() {
       setActiveFileId(file._id);
     } catch (err) {
       console.error(err);
-      toast("Failed to decrypt file");
+      const msg = err.response?.data?.message || err.message || "Failed to decrypt file";
+      toast(`Error: ${msg}`);
     }
   };
 
