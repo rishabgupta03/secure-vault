@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import { 
+import { io } from "socket.io-client";
+import {
   Mic, MicOff, Video, VideoOff, Monitor, Users, MessageSquare, 
   Settings, PhoneOff, ShieldCheck, Maximize, MoreHorizontal,
-  Clock, Lock, CheckCircle2
+  Clock, Lock, CheckCircle2, PhoneIcon
 } from "lucide-react";
-import { io } from "socket.io-client";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const socket = io(API_URL);
@@ -17,12 +17,11 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const localVideoRef = useRef(null);
+  const streamRef = useRef(null);
   const [participants, setParticipants] = useState([]);
   const [callDuration, setCallDuration] = useState(0);
   
-  const localVideoRef = useRef(null);
-  const [stream, setStream] = useState(null);
-
   // Timer logic
   useEffect(() => {
     const timer = setInterval(() => setCallDuration(prev => prev + 1), 1000);
@@ -35,7 +34,7 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // WebRTC Initialization (Simulated for UI demonstration)
+  // WebRTC Initialization
   useEffect(() => {
     const initLocalStream = async () => {
       try {
@@ -43,7 +42,7 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
           video: true, 
           audio: true 
         });
-        setStream(mediaStream);
+        streamRef.current = mediaStream;
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = mediaStream;
         }
@@ -55,13 +54,31 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
     initLocalStream();
     socket.emit("join_call", { vaultId, userId, userName });
 
+    socket.on("user_joined_call", (data) => {
+       setParticipants(prev => {
+          if (prev.find(p => p.userId === data.userId)) return prev;
+          return [...prev, data];
+       });
+    });
+
+    socket.on("user_left_call", (data) => {
+       setParticipants(prev => prev.filter(p => p.userId !== data.userId));
+    });
+
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+        });
+        streamRef.current = null;
       }
+      if (localVideoRef.current) localVideoRef.current.srcObject = null;
+      socket.off("user_joined_call");
+      socket.off("user_left_call");
       socket.emit("leave_call", { vaultId, userId });
     };
-  }, []);
+  }, [vaultId, userId, userName]);
 
   return (
     <div className="fixed inset-0 z-[100] bg-[#02040a] text-white flex flex-col font-sans overflow-hidden">
@@ -121,22 +138,31 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
             </div>
           </div>
 
-          {/* Dummy Participant 1 */}
-          <div className="relative group rounded-2xl overflow-hidden bg-[#0d1117] border border-white/5">
-            <div className="absolute inset-0 flex items-center justify-center bg-[#0d1117]">
-              <div className="w-24 h-24 rounded-full bg-purple-600 flex items-center justify-center text-3xl font-bold">
-                SR
+          {/* Remote Participants */}
+          {participants.map((p, idx) => (
+            <div key={idx} className="relative group rounded-2xl overflow-hidden bg-[#0d1117] border border-white/5">
+              <div className="absolute inset-0 flex items-center justify-center bg-[#0d1117]">
+                <div className="w-24 h-24 rounded-full bg-purple-600 flex items-center justify-center text-3xl font-bold animate-pulse">
+                  {p.userName.substring(0,1).toUpperCase()}
+                </div>
+              </div>
+              <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10">
+                 <span className="text-xs font-semibold">{p.userName}</span>
+              </div>
+              <div className="absolute top-4 right-4 bg-black/40 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest text-white/70 border border-white/5">
+                Connected
               </div>
             </div>
-            <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10">
-               <span className="text-xs font-semibold">Sarah Rodriguez</span>
-               <MicOff size={12} className="text-red-400" />
-            </div>
-            <div className="absolute top-4 right-4 bg-black/40 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest text-white/70 border border-white/5">
-              Camera Off
-            </div>
-          </div>
+          ))}
 
+          {participants.length === 0 && (
+            <div className="relative group rounded-2xl overflow-hidden bg-[#0d1117]/50 border border-dashed border-white/10 flex items-center justify-center flex-col gap-4">
+               <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
+                  <Users className="text-gray-600" size={32} />
+               </div>
+               <p className="text-gray-500 text-sm">Waiting for others to join...</p>
+            </div>
+          )}
         </div>
 
         {/* Call Status Overlay */}

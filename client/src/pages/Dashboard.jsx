@@ -11,6 +11,10 @@ import {
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import forge from "node-forge";
+import { io } from "socket.io-client";
+import { Phone as PhoneIcon } from "lucide-react";
+
+const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -56,6 +60,8 @@ export default function Dashboard() {
       return [];
     }
   });
+
+  const [incomingCall, setIncomingCall] = useState(null);
 
   const queryParams = new URLSearchParams(location.search);
   const mainTab = queryParams.get("tab") || "dashboard";
@@ -166,10 +172,22 @@ export default function Dashboard() {
     } catch (err) {}
   };
 
-  useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 10000);
     return () => clearInterval(interval);
+  }, [userId]);
+
+  useEffect(() => {
+    socket.emit("user_connected", userId);
+    
+    socket.on("incoming_call_alert", (data) => {
+      if (data.callerId !== userId) {
+        setIncomingCall(data);
+        setTimeout(() => setIncomingCall(null), 15000);
+      }
+    });
+
+    return () => {
+      socket.off("incoming_call_alert");
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -1560,6 +1578,18 @@ function VaultCard({ vault, userRole, onClick, timeAgo }) {
          {vault.pin && <Lock size={12} className="text-amber-500" title="PIN Protected" />}
          <MoreVertical size={14} className="text-gray-700 hover:text-white transition-colors" />
       </div>
+
+      {/* INCOMING CALL NOTIFICATION */}
+      {incomingCall && (
+        <IncomingCallOverlay 
+          incomingCall={incomingCall} 
+          onJoin={() => {
+            setIncomingCall(null);
+            navigate(`/vault/${incomingCall.vaultId}?tab=calls`);
+          }}
+          onIgnore={() => setIncomingCall(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1567,3 +1597,35 @@ function VaultCard({ vault, userRole, onClick, timeAgo }) {
 
 
 
+
+// INCOMING CALL OVERLAY COMPONENT
+function IncomingCallOverlay({ incomingCall, onJoin, onIgnore }) {
+  return (
+    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-md animate-bounce-in">
+      <div className="bg-[#0b0f1a] border-2 border-blue-500/50 rounded-3xl p-6 shadow-[0_0_50px_rgba(37,99,235,0.3)] flex items-center gap-6">
+        <div className="w-16 h-16 rounded-2xl bg-[#2563eb] flex items-center justify-center animate-pulse">
+           <PhoneIcon size={32} className="text-white" />
+        </div>
+        <div className="flex-1">
+          <p className="text-xs font-black text-blue-400 uppercase tracking-widest mb-1">Incoming Call</p>
+          <h3 className="text-lg font-bold truncate">{incomingCall.callerName} started a call</h3>
+          <p className="text-xs text-gray-500">in {incomingCall.vaultName}</p>
+        </div>
+        <div className="flex flex-col gap-2">
+          <button 
+            onClick={onJoin}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold text-sm transition-all"
+          >
+            Join
+          </button>
+          <button 
+            onClick={onIgnore}
+            className="px-6 py-2 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-sm text-gray-400 transition-all"
+          >
+            Ignore
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -871,11 +871,14 @@ export default function VaultPage() {
   };
 
   const startInstantCall = () => {
+    // Get latest name from profile if available
+    const myName = localStorage.getItem("userName") || "A teammate";
+    
     socket.emit("start_call", {
       vaultId: id,
-      vaultName: vault.name,
+      vaultName: vault?.name || "Secure Vault",
       callerId: userId,
-      callerName: localStorage.getItem("userName") || "A teammate"
+      callerName: myName
     });
     setActiveTab("in-call");
   };
@@ -1850,6 +1853,38 @@ return (
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// INCOMING CALL OVERLAY COMPONENT
+function IncomingCallOverlay({ incomingCall, onJoin, onIgnore }) {
+  return (
+    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-md animate-bounce-in">
+      <div className="bg-[#0b0f1a] border-2 border-blue-500/50 rounded-3xl p-6 shadow-[0_0_50px_rgba(37,99,235,0.3)] flex items-center gap-6">
+        <div className="w-16 h-16 rounded-2xl bg-[#2563eb] flex items-center justify-center animate-pulse">
+           <PhoneIcon size={32} className="text-white" />
+        </div>
+        <div className="flex-1">
+          <p className="text-xs font-black text-blue-400 uppercase tracking-widest mb-1">Incoming Call</p>
+          <h3 className="text-lg font-bold truncate">{incomingCall.callerName} started a call</h3>
+          <p className="text-xs text-gray-500">in {incomingCall.vaultName}</p>
+        </div>
+        <div className="flex flex-col gap-2">
+          <button 
+            onClick={onJoin}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold text-sm transition-all"
+          >
+            Join
+          </button>
+          <button 
+            onClick={onIgnore}
+            className="px-6 py-2 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-sm text-gray-400 transition-all"
+          >
+            Ignore
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
