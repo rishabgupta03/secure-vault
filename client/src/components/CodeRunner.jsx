@@ -6,6 +6,7 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export default function CodeRunner({ code, fileName, isOpen, onToggle }) {
   const [output, setOutput] = useState("");
+  const [stdin, setStdin] = useState("");
   const [isRunning, setIsRunning] = useState(false);
 
   const getLanguage = (name) => {
@@ -32,7 +33,7 @@ export default function CodeRunner({ code, fileName, isOpen, onToggle }) {
 
     try {
       const language = getLanguage(fileName);
-      const res = await axios.post(`${API_URL}/api/execute`, { code, language });
+      const res = await axios.post(`${API_URL}/api/execute`, { code, language, stdin });
       
       const out = res.data.stdout || "";
       const err = res.data.stderr || "";
@@ -74,6 +75,14 @@ export default function CodeRunner({ code, fileName, isOpen, onToggle }) {
         <div className="flex items-center gap-2">
           {isOpen && (
             <>
+              <input
+                type="text"
+                placeholder="Standard Input (e.g. for scanf)"
+                value={stdin}
+                onChange={(e) => setStdin(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-[#0b0f1a] border border-white/10 text-xs text-gray-300 px-2 py-1 rounded w-48 outline-none focus:border-blue-500 transition-colors placeholder:text-gray-600"
+              />
               <button 
                 onClick={runCode}
                 disabled={isRunning || !fileName}

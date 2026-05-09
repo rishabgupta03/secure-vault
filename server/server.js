@@ -1150,7 +1150,7 @@ const vm = require("vm");
 const os = require("os");
 
 app.post("/api/execute", async (req, res) => {
-  const { code, language } = req.body;
+  const { code, language, stdin } = req.body;
   if (!code || !language) return res.status(400).json({ error: "Missing code or language" });
 
   const start = Date.now();
@@ -1168,7 +1168,7 @@ app.post("/api/execute", async (req, res) => {
       const tmpFile = path.join(os.tmpdir(), `spv_exec_${Date.now()}.py`);
       fs.writeFileSync(tmpFile, code);
       try {
-        stdout = execSync(`python "${tmpFile}"`, { timeout: 5000, encoding: "utf8", maxBuffer: 1024 * 512 });
+        stdout = execSync(`python "${tmpFile}"`, { timeout: 5000, encoding: "utf8", maxBuffer: 1024 * 512, input: stdin || "" });
       } catch (e) {
         stderr = e.stderr || e.message;
         stdout = e.stdout || "";
@@ -1185,7 +1185,7 @@ app.post("/api/execute", async (req, res) => {
       fs.writeFileSync(tmpFile, code);
       try {
         execSync(`javac "${tmpFile}"`, { timeout: 10000, cwd: tmpDir, encoding: "utf8" });
-        stdout = execSync(`java -cp "${tmpDir}" ${className}`, { timeout: 5000, encoding: "utf8", maxBuffer: 1024 * 512 });
+        stdout = execSync(`java -cp "${tmpDir}" ${className}`, { timeout: 5000, encoding: "utf8", maxBuffer: 1024 * 512, input: stdin || "" });
       } catch (e) {
         stderr = e.stderr || e.message;
         stdout = e.stdout || "";
@@ -1200,7 +1200,7 @@ app.post("/api/execute", async (req, res) => {
       const compiler = language === "c" ? "gcc" : "g++";
       try {
         execSync(`${compiler} "${tmpFile}" -o "${outFile}"`, { timeout: 10000, encoding: "utf8" });
-        stdout = execSync(`"${outFile}"`, { timeout: 5000, encoding: "utf8", maxBuffer: 1024 * 512 });
+        stdout = execSync(`"${outFile}"`, { timeout: 5000, encoding: "utf8", maxBuffer: 1024 * 512, input: stdin || "" });
       } catch (e) {
         stderr = e.stderr || e.message;
         stdout = e.stdout || "";

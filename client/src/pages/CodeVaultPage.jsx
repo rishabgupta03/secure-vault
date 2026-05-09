@@ -708,7 +708,7 @@ export default function CodeVaultPage() {
           </div>
 
           {/* Editor / History / Empty State */}
-          <div className="flex-1 relative">
+          <div className="flex-1 relative min-h-0">
             {activeTab && !showHistory ? (
               <Editor
                 height="100%"
