@@ -1,111 +1,110 @@
-import React, { useEffect, useRef } from "react";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import "@xterm/xterm/css/xterm.css";
-import { Terminal as TerminalIcon, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
-import { io } from "socket.io-client";
+import React, { useState } from "react";
+import { Terminal as TerminalIcon, ChevronDown, ChevronUp, Trash2, Play, Loader } from "lucide-react";
+import axios from "axios";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const socket = io(API_URL);
 
-export default function CodeRunner({ isOpen, onToggle }) {
-  const terminalRef = useRef(null);
-  const xtermRef = useRef(null);
-  const fitAddonRef = useRef(null);
+export default function CodeRunner({ code, fileName, isOpen, onToggle }) {
+  const [output, setOutput] = useState("");
+  const [isRunning, setIsRunning] = useState(false);
 
-  useEffect(() => {
-    if (!isOpen || !terminalRef.current) return;
+  const getLanguage = (name) => {
+    if (!name) return "plaintext";
+    if (name.endsWith(".js")) return "javascript";
+    if (name.endsWith(".py")) return "python";
+    if (name.endsWith(".java")) return "java";
+    if (name.endsWith(".cpp")) return "cpp";
+    if (name.endsWith(".c")) return "c";
+    return "plaintext";
+  };
 
-    if (!xtermRef.current) {
-      const xterm = new Terminal({
-        theme: {
-          background: "#0a0d14",
-          foreground: "#d4d4d4",
-          cursor: "#3b82f6",
-          selectionBackground: "#264f78",
-          black: "#000000",
-          red: "#ef4444",
-          green: "#10b981",
-          yellow: "#f59e0b",
-          blue: "#3b82f6",
-          magenta: "#8b5cf6",
-          cyan: "#06b6d4",
-          white: "#ffffff",
-        },
-        fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
-        fontSize: 13,
-        cursorBlink: true,
-      });
-
-      const fitAddon = new FitAddon();
-      xterm.loadAddon(fitAddon);
-      xterm.open(terminalRef.current);
-      fitAddon.fit();
-
-      xtermRef.current = xterm;
-      fitAddonRef.current = fitAddon;
-
-      // Connect to backend
-      socket.emit("terminal_start", { 
-        vaultId: window.location.pathname.split("/").pop(), 
-        userId: localStorage.getItem("userId") 
-      });
-
-      xterm.onData((data) => {
-        socket.emit("terminal_input", data);
-      });
-
-      socket.on("terminal_output", (data) => {
-        xterm.write(data);
-      });
-
-      const resizeObserver = new ResizeObserver(() => {
-        try {
-          fitAddon.fit();
-          socket.emit("terminal_resize", { cols: xterm.cols, rows: xterm.rows });
-        } catch (err) {}
-      });
-      resizeObserver.observe(terminalRef.current);
-
-      return () => {
-        resizeObserver.disconnect();
-        socket.off("terminal_output");
-        xterm.dispose();
-        xtermRef.current = null;
-      };
-    } else {
-      setTimeout(() => {
-        if (fitAddonRef.current) fitAddonRef.current.fit();
-      }, 50);
+  const runCode = async (e) => {
+    e.stopPropagation();
+    if (!code) {
+      setOutput("No code to run. Open a file first.");
+      if (!isOpen) onToggle();
+      return;
     }
-  }, [isOpen]);
+    
+    if (!isOpen) onToggle();
+    setIsRunning(true);
+    setOutput("Executing securely in cloud sandbox...\n");
+
+    try {
+      const language = getLanguage(fileName);
+      const res = await axios.post(`${API_URL}/api/execute`, { code, language });
+      
+      const out = res.data.stdout || "";
+      const err = res.data.stderr || "";
+      
+      if (err) {
+        setOutput(prev => prev + `\n[ERROR]\n${err}`);
+      } else {
+        setOutput(prev => prev + `\n${out}\n[Process completed successfully]`);
+      }
+    } catch (err) {
+      setOutput(prev => prev + `\n[SERVER ERROR] ${err.response?.data?.error || err.message}`);
+    } finally {
+      setIsRunning(false);
+    }
+  };
 
   const clearTerminal = (e) => {
     e.stopPropagation();
-    if (xtermRef.current) {
-      xtermRef.current.clear();
-    }
+    setOutput("");
   };
 
   return (
     <div className={`border-t border-white/10 bg-[#0a0d14] flex flex-col transition-all ${isOpen ? "h-64" : "h-9"}`}>
       {/* Terminal Header */}
       <div className="h-9 flex items-center justify-between px-4 bg-[#06080f] border-b border-white/5 cursor-pointer select-none shrink-0" onClick={onToggle}>
-        <div className="flex items-center gap-2 text-xs text-gray-400">
-          <TerminalIcon size={13} />
-          <span className="font-bold uppercase tracking-widest">Terminal</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-xs text-gray-400">
+            <TerminalIcon size={13} />
+            <span className="font-bold uppercase tracking-widest">Cloud Runner</span>
+          </div>
+          
+          {isOpen && fileName && (
+            <div className="flex items-center gap-2 border-l border-white/10 pl-3">
+              <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded text-gray-400">{fileName}</span>
+            </div>
+          )}
         </div>
+        
         <div className="flex items-center gap-2">
-          <button onClick={clearTerminal} className="text-gray-500 hover:text-white p-1">
-            <Trash2 size={12} />
+          {isOpen && (
+            <>
+              <button 
+                onClick={runCode}
+                disabled={isRunning || !fileName}
+                className="flex items-center gap-1 text-[10px] bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 disabled:text-gray-400 text-white px-3 py-1 rounded transition-colors"
+              >
+                {isRunning ? <Loader size={10} className="animate-spin" /> : <Play size={10} />}
+                RUN CODE
+              </button>
+              <div className="w-px h-3 bg-white/10 mx-1" />
+              <button onClick={clearTerminal} className="text-gray-500 hover:text-white p-1" title="Clear Output">
+                <Trash2 size={12} />
+              </button>
+            </>
+          )}
+          <button className="text-gray-500 hover:text-white p-1 ml-1">
+            {isOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
           </button>
-          {isOpen ? <ChevronDown size={14} className="text-gray-500" /> : <ChevronUp size={14} className="text-gray-500" />}
         </div>
       </div>
 
-      {/* Terminal Output Canvas */}
-      <div className={`flex-1 relative overflow-hidden ${!isOpen && "hidden"}`}>
-        <div ref={terminalRef} className="absolute inset-0 p-2 pl-4" />
+      {/* Terminal Output */}
+      <div className={`flex-1 overflow-auto p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap ${!isOpen && "hidden"}`}>
+        {output ? (
+          <div className={output.includes("[ERROR]") || output.includes("[SERVER ERROR]") ? "text-red-400" : "text-gray-300"}>
+            {output}
+          </div>
+        ) : (
+          <div className="text-gray-600 italic h-full flex items-center justify-center">
+            {fileName ? `Click "Run Code" to execute ${fileName} securely in the cloud sandbox.` : "Open a file to use the Cloud Runner."}
+          </div>
+        )}
       </div>
     </div>
   );

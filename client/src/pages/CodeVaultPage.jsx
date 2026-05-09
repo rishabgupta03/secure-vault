@@ -809,7 +809,12 @@ export default function CodeVaultPage() {
           </div>
 
           {/* Code Runner Terminal */}
-          <CodeRunner isOpen={showTerminal} onToggle={() => setShowTerminal(!showTerminal)} />
+          <CodeRunner 
+            code={activeTab?.content || ""} 
+            fileName={activeTab?.name || ""} 
+            isOpen={showTerminal} 
+            onToggle={() => setShowTerminal(!showTerminal)} 
+          />
         </div>
 
         {/* CHAT PANEL */}
