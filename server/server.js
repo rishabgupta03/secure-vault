@@ -1107,11 +1107,89 @@ app.post("/api/vault/:vaultId/meetings", async (req, res) => {
   }
 });
 
+// ================= CODE EXECUTION (SANDBOXED) =================
+const { execSync, execFile } = require("child_process");
+const vm = require("vm");
+const os = require("os");
+
+app.post("/api/execute", async (req, res) => {
+  const { code, language } = req.body;
+  if (!code || !language) return res.status(400).json({ error: "Missing code or language" });
+
+  const start = Date.now();
+  try {
+    let stdout = "", stderr = "";
+
+    if (language === "javascript") {
+      // Use Node's vm module - sandboxed, no require access
+      const sandbox = { console: { log: (...a) => { stdout += a.join(" ") + "\n"; }, error: (...a) => { stderr += a.join(" ") + "\n"; } }, result: null };
+      const script = new vm.Script(code, { timeout: 5000 });
+      const context = vm.createContext(sandbox);
+      script.runInContext(context, { timeout: 5000 });
+
+    } else if (language === "python") {
+      const tmpFile = path.join(os.tmpdir(), `spv_exec_${Date.now()}.py`);
+      fs.writeFileSync(tmpFile, code);
+      try {
+        stdout = execSync(`python "${tmpFile}"`, { timeout: 5000, encoding: "utf8", maxBuffer: 1024 * 512 });
+      } catch (e) {
+        stderr = e.stderr || e.message;
+        stdout = e.stdout || "";
+      }
+      try { fs.unlinkSync(tmpFile); } catch(e) {}
+
+    } else if (language === "java") {
+      const tmpDir = path.join(os.tmpdir(), `spv_java_${Date.now()}`);
+      fs.mkdirSync(tmpDir, { recursive: true });
+      // Extract class name from code
+      const classMatch = code.match(/class\s+(\w+)/);
+      const className = classMatch ? classMatch[1] : "Main";
+      const tmpFile = path.join(tmpDir, `${className}.java`);
+      fs.writeFileSync(tmpFile, code);
+      try {
+        execSync(`javac "${tmpFile}"`, { timeout: 10000, cwd: tmpDir, encoding: "utf8" });
+        stdout = execSync(`java -cp "${tmpDir}" ${className}`, { timeout: 5000, encoding: "utf8", maxBuffer: 1024 * 512 });
+      } catch (e) {
+        stderr = e.stderr || e.message;
+        stdout = e.stdout || "";
+      }
+      try { fs.rmSync(tmpDir, { recursive: true }); } catch(e) {}
+
+    } else if (language === "cpp" || language === "c") {
+      const ext = language === "c" ? ".c" : ".cpp";
+      const tmpFile = path.join(os.tmpdir(), `spv_exec_${Date.now()}${ext}`);
+      const outFile = tmpFile.replace(ext, process.platform === "win32" ? ".exe" : ".out");
+      fs.writeFileSync(tmpFile, code);
+      const compiler = language === "c" ? "gcc" : "g++";
+      try {
+        execSync(`${compiler} "${tmpFile}" -o "${outFile}"`, { timeout: 10000, encoding: "utf8" });
+        stdout = execSync(`"${outFile}"`, { timeout: 5000, encoding: "utf8", maxBuffer: 1024 * 512 });
+      } catch (e) {
+        stderr = e.stderr || e.message;
+        stdout = e.stdout || "";
+      }
+      try { fs.unlinkSync(tmpFile); } catch(e) {}
+      try { fs.unlinkSync(outFile); } catch(e) {}
+
+    } else {
+      return res.status(400).json({ error: `Unsupported language: ${language}` });
+    }
+
+    res.json({ stdout, stderr, executionTime: Date.now() - start });
+  } catch (err) {
+    res.json({ stdout: "", stderr: err.message || "Execution failed", executionTime: Date.now() - start });
+  }
+});
+
 // ================= SOCKET.IO =================
 const userSockets = new Map(); // userId -> Set(socketIds)
 
 // --- CALL TRACKING ---
 const callParticipants = new Map(); // vaultId -> Map(userId -> {userName, socketId})
+
+// --- EDITOR COLLABORATION TRACKING ---
+const editorRooms = new Map(); // "vaultId_fileId" -> Map(userId -> {userName, socketId, color})
+const CURSOR_COLORS = ["#3b82f6","#ef4444","#10b981","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#f97316"];
 
 io.on("connection", (socket) => {
   console.log("User connected to socket:", socket.id);
@@ -1125,6 +1203,38 @@ io.on("connection", (socket) => {
     io.emit("online_users_update", Array.from(userSockets.keys()));
   });
 
+  socket.on("get_online_users", () => {
+    socket.emit("online_users_update", Array.from(userSockets.keys()));
+  });
+
+  // --- CHAT EVENTS (RESTORED) ---
+  socket.on("join_channel", (channelId) => {
+    socket.join(channelId);
+  });
+
+  socket.on("send_message", async (data) => {
+    try {
+      const msg = await ChatMessage.create(data);
+      io.to(data.channelId).emit("new_message", msg);
+    } catch(err) {
+      console.error(err);
+    }
+  });
+
+  socket.on("typing", (data) => {
+    socket.to(data.channelId).emit("typing", data);
+  });
+
+  socket.on("mark_read", async (data) => {
+    try {
+      await ChatMessage.updateMany(
+        { channelId: data.channelId, readBy: { $ne: data.userId } },
+        { $push: { readBy: data.userId } }
+      );
+      io.to(data.channelId).emit("message_read", data);
+    } catch(err) {}
+  });
+
   // --- CALL EVENTS ---
   socket.on("join_call", (data) => {
     const { vaultId, userId, userName } = data;
@@ -1135,11 +1245,9 @@ io.on("connection", (socket) => {
     }
     callParticipants.get(vaultId).set(userId, { userName, socketId: socket.id });
     
-    // Send current participant list to the joiner
     const currentParticipants = Array.from(callParticipants.get(vaultId).values());
     socket.emit("current_participants", currentParticipants);
     
-    // Notify others
     socket.to(`call_${vaultId}`).emit("user_joined_call", data);
   });
 
@@ -1159,13 +1267,82 @@ io.on("connection", (socket) => {
     socket.leave(`call_${vaultId}`);
   });
 
+  // --- EDITOR COLLABORATION EVENTS ---
+  socket.on("join_editor", (data) => {
+    const { vaultId, fileId, userId, userName } = data;
+    const roomKey = `${vaultId}_${fileId}`;
+    const roomName = `editor_${roomKey}`;
+    socket.join(roomName);
+
+    if (!editorRooms.has(roomKey)) {
+      editorRooms.set(roomKey, new Map());
+    }
+    const room = editorRooms.get(roomKey);
+    const colorIdx = room.size % CURSOR_COLORS.length;
+    room.set(userId, { userName, socketId: socket.id, color: CURSOR_COLORS[colorIdx] });
+
+    // Send current collaborators to the joiner
+    const collaborators = Array.from(room.entries()).map(([uid, info]) => ({
+      userId: uid, userName: info.userName, color: info.color
+    }));
+    socket.emit("editor_collaborators", { fileId, collaborators });
+
+    // Notify others
+    socket.to(roomName).emit("user_joined_editor", {
+      fileId, userId, userName, color: CURSOR_COLORS[colorIdx]
+    });
+  });
+
+  socket.on("leave_editor", (data) => {
+    const { vaultId, fileId, userId } = data;
+    const roomKey = `${vaultId}_${fileId}`;
+    const roomName = `editor_${roomKey}`;
+    
+    if (editorRooms.has(roomKey)) {
+      editorRooms.get(roomKey).delete(userId);
+      if (editorRooms.get(roomKey).size === 0) {
+        editorRooms.delete(roomKey);
+      }
+    }
+    socket.to(roomName).emit("user_left_editor", { fileId, userId });
+    socket.leave(roomName);
+  });
+
+  socket.on("code_change", (data) => {
+    // data: { vaultId, fileId, changes, userId }
+    const roomName = `editor_${data.vaultId}_${data.fileId}`;
+    socket.to(roomName).emit("remote_code_change", {
+      fileId: data.fileId, changes: data.changes, userId: data.userId
+    });
+  });
+
+  socket.on("cursor_update", (data) => {
+    // data: { vaultId, fileId, userId, userName, position, color }
+    const roomName = `editor_${data.vaultId}_${data.fileId}`;
+    socket.to(roomName).emit("remote_cursor", {
+      fileId: data.fileId, userId: data.userId, userName: data.userName,
+      position: data.position, color: data.color
+    });
+  });
+
+  // --- DISCONNECT ---
   socket.on("disconnect", () => {
     if (socket.userId && userSockets.has(socket.userId)) {
-      // Remove from call tracking if they were in a call
+      // Remove from call tracking
       callParticipants.forEach((participants, vaultId) => {
         if (participants.has(socket.userId)) {
           participants.delete(socket.userId);
           socket.to(`call_${vaultId}`).emit("user_left_call", { userId: socket.userId });
+        }
+      });
+
+      // Remove from editor tracking
+      editorRooms.forEach((room, roomKey) => {
+        if (room.has(socket.userId)) {
+          room.delete(socket.userId);
+          const roomName = `editor_${roomKey}`;
+          socket.to(roomName).emit("user_left_editor", { userId: socket.userId });
+          if (room.size === 0) editorRooms.delete(roomKey);
         }
       });
 

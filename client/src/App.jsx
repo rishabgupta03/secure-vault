@@ -6,6 +6,7 @@ import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import ForgotPassword from "./pages/ForgotPassword";
 import VaultPage from "./pages/VaultPage";
+import CodeVaultPage from "./pages/CodeVaultPage";
 
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/forgot" element={<ForgotPassword />} />
         <Route path="/vault/:id" element={<VaultPage />} />
+        <Route path="/code-vault/:id" element={<CodeVaultPage />} />
       </Routes>
     </BrowserRouter>
   );

@@ -37,6 +37,7 @@ export default function Dashboard() {
   const [encryption, setEncryption] = useState("AES-256-GCM");
   const [role, setRole] = useState("Viewer");
   const [vaultPin, setVaultPin] = useState("");
+  const [vaultType, setVaultType] = useState("file");
   const [currentUserName, setCurrentUserName] = useState(localStorage.getItem("userName") || "User");
   const [globalLogs, setGlobalLogs] = useState([]);
   const [activityFilters, setActivityFilters] = useState({
@@ -240,7 +241,8 @@ export default function Dashboard() {
         visibility,
         encryption,
         role,
-        pin: vaultPin
+        pin: vaultPin,
+        type: vaultType
       });
 
       setVaultName("");
@@ -249,6 +251,7 @@ export default function Dashboard() {
       setEncryption("AES-256-GCM");
       setRole("Viewer");
       setVaultPin("");
+      setVaultType("file");
 
       setShowModal(false);
       fetchVaults();
@@ -562,7 +565,7 @@ export default function Dashboard() {
             </h3>
             <div className="space-y-1">
               {vaults.slice(0, 5).map(v => (
-                <div key={v._id} onClick={() => window.location.href = `/vault/${v._id}`} className="flex items-center gap-3 px-3 py-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg cursor-pointer transition text-sm">
+                <div key={v._id} onClick={() => window.location.href = v.type === "code" ? `/code-vault/${v._id}` : `/vault/${v._id}`} className="flex items-center gap-3 px-3 py-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg cursor-pointer transition text-sm">
                   <div className="w-5 h-5 rounded border border-white/10 flex items-center justify-center">
                     <Lock size={10} />
                   </div>
@@ -758,7 +761,7 @@ export default function Dashboard() {
                 ) : (
                   <div className="grid grid-cols-2 gap-5">
                     {filteredVaults.map((v) => (
-                      <VaultCard key={v._id} vault={v} userRole={getUserRole(v)} onClick={() => navigate(`/vault/${v._id}`)} timeAgo={timeAgo} />
+                      <VaultCard key={v._id} vault={v} userRole={getUserRole(v)} onClick={() => navigate(v.type === "code" ? `/code-vault/${v._id}` : `/vault/${v._id}`)} timeAgo={timeAgo} />
                     ))}
                   </div>
                 )}
@@ -1252,6 +1255,33 @@ export default function Dashboard() {
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                 />
+              </div>
+
+              {/* VAULT TYPE SELECTOR */}
+              <div>
+                <label className="text-[10px] font-black tracking-widest text-gray-500 uppercase block mb-2">Vault Type</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div
+                    onClick={() => setVaultType("file")}
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all text-center ${
+                      vaultType === "file" ? "border-blue-500 bg-blue-500/10" : "border-white/5 bg-white/5 hover:border-white/20"
+                    }`}
+                  >
+                    <Lock size={20} className={`mx-auto mb-2 ${vaultType === "file" ? "text-blue-400" : "text-gray-500"}`} />
+                    <p className="text-xs font-bold">File Vault</p>
+                    <p className="text-[9px] text-gray-500 mt-1">Documents, PDFs, media</p>
+                  </div>
+                  <div
+                    onClick={() => setVaultType("code")}
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all text-center ${
+                      vaultType === "code" ? "border-purple-500 bg-purple-500/10" : "border-white/5 bg-white/5 hover:border-white/20"
+                    }`}
+                  >
+                    <Briefcase size={20} className={`mx-auto mb-2 ${vaultType === "code" ? "text-purple-400" : "text-gray-500"}`} />
+                    <p className="text-xs font-bold">Code Workspace</p>
+                    <p className="text-[9px] text-gray-500 mt-1">Live code collaboration</p>
+                  </div>
+                </div>
               </div>
 
               <div>

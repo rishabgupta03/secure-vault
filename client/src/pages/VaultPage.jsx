@@ -650,7 +650,6 @@ import 'react-quill/dist/quill.snow.css';
 import * as Diff from 'diff';
 import VaultChat from "./VaultChat";
 import TeamCall from "./TeamCall";
-import VaultEditor from "../components/VaultEditor";
 
 const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
 
@@ -790,6 +789,7 @@ export default function VaultPage() {
   const [originalContent, setOriginalContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [aesKeyForEdit, setAesKeyForEdit] = useState(null);
+  const aesKeyRef = useRef(null);
   const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
@@ -904,10 +904,11 @@ export default function VaultPage() {
       const isTextFile = file.name.endsWith(".txt") || file.name.endsWith(".html") || file.name.endsWith(".doc");
       const actionParam = isTextFile ? "view" : "download";
       
+      // Always fetch fresh from server
       const res = await axios.get(`${API_URL}/api/file/${file._id}?userId=${userId}&action=${actionParam}`);
       const { file: base64File, encryptedKey, fileName } = res.data;
 
-      // ✅ 2. Decrypt AES key using RSA (with fallback)
+      // Decrypt AES key using RSA (with fallback)
       let aesKey;
       try {
         aesKey = privateKey.decrypt(forge.util.decode64(encryptedKey), "RSA-OAEP");
@@ -952,14 +953,19 @@ export default function VaultPage() {
         setEditingFile(file);
         setOriginalContent(text);
         setEditorContent(text);
+        // Store AES key in BOTH state and ref for stability
         setAesKeyForEdit(aesKey);
+        aesKeyRef.current = aesKey;
         setShowHistory(false);
       } else {
         const blob = new Blob([decrypted]);
         const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
+        const url = URL.createObjectURL(blob);
+        link.href = url;
         link.download = fileName;
         link.click();
+        // Clean up object URL to prevent memory leaks
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
     } catch (err) {
       console.error("DECRYPT ERROR:", err);
@@ -968,7 +974,9 @@ export default function VaultPage() {
   };
 
   const saveFileEdits = async () => {
-    if (!editingFile || !aesKeyForEdit) return;
+    // Use ref as primary key source, fallback to state
+    const currentAesKey = aesKeyRef.current || aesKeyForEdit;
+    if (!editingFile || !currentAesKey) return;
     setIsSaving(true);
     try {
       // 1. Generate Diff
@@ -990,7 +998,7 @@ export default function VaultPage() {
       
       const cryptoKey = await window.crypto.subtle.importKey(
         "raw",
-        new Uint8Array(aesKeyForEdit.split("").map(c => c.charCodeAt(0))),
+        new Uint8Array(currentAesKey.split("").map(c => c.charCodeAt(0))),
         { name: "AES-GCM" },
         false,
         ["encrypt"]
@@ -1329,11 +1337,6 @@ return (
             className={`cursor-pointer ${activeTab === "calls" ? "text-blue-400 border-b border-blue-400 pb-1" : "text-gray-400"}`}>
             calls
           </span>
-          <span 
-            onClick={() => setActiveTab("development")} 
-            className={`cursor-pointer ${activeTab === "development" ? "text-blue-400 border-b border-blue-400 pb-1" : "text-gray-400"}`}>
-            development
-          </span>
         </div>
       </div>
 
@@ -1618,15 +1621,6 @@ return (
           vault={vault} 
           onLeave={() => setActiveTab("calls")} 
         />
-      ) : activeTab === "development" ? (
-        <div className="flex-1 bg-[#0b0f1a]">
-          <VaultEditor 
-            vaultId={vault._id} 
-            vault={vault} 
-            userId={userId}
-            onRefresh={fetchVault}
-          />
-        </div>
       ) : null}
     </div>
     

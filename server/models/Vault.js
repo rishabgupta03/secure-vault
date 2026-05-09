@@ -9,6 +9,9 @@ const VaultSchema = new mongoose.Schema({
   encryption: String,
   pin: String,
 
+  // 🏷️ VAULT TYPE
+  type: { type: String, enum: ["file", "code"], default: "file" },
+
   // 👥 TEAM
   members: [
     {
