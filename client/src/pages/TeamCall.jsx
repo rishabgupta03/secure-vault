@@ -35,12 +35,17 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
     return () => clearInterval(timer);
   }, []);
 
-  const createPeerConnection = (targetSocketId, isCaller) => {
+  const createPeerConnection = (targetSocketId) => {
+    console.log("Creating PeerConnection for:", targetSocketId);
     const pc = new RTCPeerConnection(rtcConfig);
+
+    // Queue for ICE candidates that arrive too early
+    pc.iceQueue = [];
 
     // Handle ICE Candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
+        console.log("Sending ICE candidate to:", targetSocketId);
         socket.emit("webrtc_ice_candidate", {
           targetSocketId,
           candidate: event.candidate
@@ -50,17 +55,25 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
 
     // Handle Remote Stream
     pc.ontrack = (event) => {
+      console.log("Received remote track from:", targetSocketId, event.streams[0]);
       setRemoteStreams(prev => ({
         ...prev,
         [targetSocketId]: event.streams[0]
       }));
     };
 
+    pc.oniceconnectionstatechange = () => {
+      console.log(`ICE Connection State with ${targetSocketId}: ${pc.iceConnectionState}`);
+    };
+
     // Add local tracks to peer connection
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => {
+        console.log("Adding local track to PC:", track.kind);
         pc.addTrack(track, streamRef.current);
       });
+    } else {
+      console.warn("No local stream available when creating PeerConnection!");
     }
 
     peersRef.current[targetSocketId] = pc;
@@ -70,21 +83,35 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
   useEffect(() => {
     const initCall = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        console.log("Initializing local media...");
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 1280, height: 720 }, 
+          audio: true 
+        });
         streamRef.current = stream;
         if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
+        // Ensure socket is connected and has ID
+        if (!socket.id) {
+          console.log("Socket ID not ready, waiting for connection...");
+          await new Promise(resolve => socket.once("connect", resolve));
+        }
+
+        console.log("Joining call room:", vaultId);
         socket.emit("join_call", { vaultId, userId, userName });
 
         socket.on("current_participants", async (list) => {
+          console.log("Current participants in vault:", list);
           const others = list.filter(p => p.socketId !== socket.id);
           setParticipants(others);
           
-          // If we are joining, we start the offer to everyone already there
+          // As the new joiner, we initiate connections to everyone already in the call
           for (const p of others) {
-            const pc = createPeerConnection(p.socketId, true);
+            const pc = createPeerConnection(p.socketId);
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
+            
+            console.log("Sending WebRTC offer to:", p.userName);
             socket.emit("webrtc_offer", {
               targetSocketId: p.socketId,
               offer,
@@ -95,6 +122,7 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
         });
 
         socket.on("user_joined_call", (data) => {
+          console.log("User joined call:", data.userName);
           setParticipants(prev => {
             if (prev.find(p => p.socketId === data.socketId)) return prev;
             return [...prev, data];
@@ -102,10 +130,23 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
         });
 
         socket.on("webrtc_offer", async (data) => {
-          const pc = createPeerConnection(data.callerSocketId, false);
+          console.log("Received WebRTC offer from:", data.callerName);
+          const pc = createPeerConnection(data.callerSocketId);
           await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          
+          // Process queued ICE candidates
+          if (pc.iceQueue.length > 0) {
+            console.log(`Processing ${pc.iceQueue.length} queued ICE candidates`);
+            for (const cand of pc.iceQueue) {
+              await pc.addIceCandidate(new RTCIceCandidate(cand));
+            }
+            pc.iceQueue = [];
+          }
+
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
+          
+          console.log("Sending WebRTC answer to:", data.callerName);
           socket.emit("webrtc_answer", {
             targetSocketId: data.callerSocketId,
             answer
@@ -113,20 +154,38 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
         });
 
         socket.on("webrtc_answer", async (data) => {
+          console.log("Received WebRTC answer");
           const pc = peersRef.current[data.senderSocketId];
           if (pc) {
             await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            
+            // Process queued ICE candidates
+            if (pc.iceQueue.length > 0) {
+              console.log(`Processing ${pc.iceQueue.length} queued ICE candidates`);
+              for (const cand of pc.iceQueue) {
+                await pc.addIceCandidate(new RTCIceCandidate(cand));
+              }
+              pc.iceQueue = [];
+            }
           }
         });
 
         socket.on("webrtc_ice_candidate", async (data) => {
           const pc = peersRef.current[data.senderSocketId];
           if (pc) {
-            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            if (pc.remoteDescription) {
+              await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } else {
+              console.log("Remote description not set yet, queuing ICE candidate");
+              pc.iceQueue.push(data.candidate);
+            }
+          } else {
+            console.warn("Received ICE candidate for unknown peer:", data.senderSocketId);
           }
         });
 
         socket.on("user_left_call", (data) => {
+          console.log("User left call:", data.userId);
           if (peersRef.current[data.socketId]) {
             peersRef.current[data.socketId].close();
             delete peersRef.current[data.socketId];
@@ -139,13 +198,14 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
           });
         });
       } catch (err) {
-        console.error("Call init error:", err);
+        console.error("Call initialization failed:", err);
       }
     };
 
     initCall();
 
     return () => {
+      console.log("Cleaning up TeamCall component...");
       socket.off("current_participants");
       socket.off("user_joined_call");
       socket.off("webrtc_offer");
@@ -154,7 +214,10 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
       socket.off("user_left_call");
 
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current.getTracks().forEach(t => {
+          t.stop();
+          console.log("Stopped local track:", t.kind);
+        });
       }
       Object.values(peersRef.current).forEach(pc => pc.close());
       socket.emit("leave_call", { vaultId, userId });
