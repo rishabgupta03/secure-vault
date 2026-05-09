@@ -1072,8 +1072,18 @@ export default function VaultPage() {
   useEffect(() => {
     fetchVault();
 
-    const interval = setInterval(() => {
-      fetchVault();
+    let errorCount = 0;
+    const interval = setInterval(async () => {
+      try {
+        await fetchVault();
+        errorCount = 0; // reset on success
+      } catch (e) {
+        errorCount++;
+        if (errorCount > 10) {
+           console.warn("Too many fetch errors, stopping polling.");
+           clearInterval(interval);
+        }
+      }
     }, 4000);
 
     return () => clearInterval(interval);

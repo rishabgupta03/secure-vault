@@ -19,14 +19,31 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
+
+const allowedOrigins = [
+  "https://spv-client.onrender.com",
+  "http://localhost:5173",
+  "http://localhost:3000"
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true
+}));
+
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
-
-app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 const ROLE_PERMISSIONS = {
@@ -1549,6 +1566,24 @@ async function cleanupCallParticipant(vaultId, userId, socketId) {
 });
 
 // ================= START SERVER =================
+// Global Health Check
+app.get("/health", (req, res) => res.status(200).send("OK"));
+
+// Handle unhandled rejections
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+});
+
+// Final Error Handler Middleware
+app.use((err, req, res, next) => {
+  console.error("Express Error Handler:", err);
+  res.status(500).json({ error: "Internal Server Error" });
+});
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server running on ${PORT}`));
 
