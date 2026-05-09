@@ -881,7 +881,7 @@ export default function VaultPage() {
 
   const startInstantCall = () => {
     // Get latest name from profile or localStorage
-    const myName = profile?.name || localStorage.getItem("userName") || "A teammate";
+    const myName = memberDetailsMap[userId]?.name || localStorage.getItem("userName") || "A teammate";
     
     socket.emit("start_call", {
       vaultId: id,
