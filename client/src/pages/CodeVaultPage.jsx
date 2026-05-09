@@ -550,7 +550,15 @@ export default function CodeVaultPage() {
             const encryptedKeyBase64 = keyRes.data.encryptedKey;
             if (!encryptedKeyBase64) continue;
 
-            const decryptedAESKey = privateKey.decrypt(forge.util.decode64(encryptedKeyBase64), "RSA-OAEP");
+            let decryptedAESKey;
+            try {
+              decryptedAESKey = privateKey.decrypt(forge.util.decode64(encryptedKeyBase64), "RSA-OAEP");
+            } catch {
+              decryptedAESKey = privateKey.decrypt(forge.util.decode64(encryptedKeyBase64), "RSA-OAEP", {
+                md: forge.md.sha1.create(), mgf1: { md: forge.md.sha1.create() }
+              });
+            }
+
             const newEncryptedKey = targetPublicKey.encrypt(decryptedAESKey, "RSA-OAEP");
 
             await axios.post(`${API_URL}/api/share-file-key`, {
@@ -558,7 +566,9 @@ export default function CodeVaultPage() {
               targetUserId,
               encryptedKey: forge.util.encode64(newEncryptedKey)
             });
-          } catch(err) {}
+          } catch(err) {
+            console.error("Key share failure for file:", file.name, err);
+          }
         }
       } catch(err) { console.error("Failed to share keys with new member", err); }
 
