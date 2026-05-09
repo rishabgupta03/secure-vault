@@ -728,7 +728,10 @@ app.get("/api/file/:fileId", async (req, res) => {
     }
 
     const vault = await Vault.findOne({
-      "files._id": new mongoose.Types.ObjectId(fileId)
+      $or: [
+        { "files._id": new mongoose.Types.ObjectId(fileId) },
+        { "files._id": fileId }
+      ]
     });
 
     if (!vault) return res.status(404).json({ message: "Vault not found" });
@@ -1359,8 +1362,66 @@ io.on("connection", (socket) => {
     });
   });
 
+  // --- TERMINAL EVENTS ---
+  socket.on("terminal_start", (data) => {
+    try {
+      const pty = require("node-pty");
+      const os = require("os");
+      const shell = os.platform() === "win32" ? "powershell.exe" : "bash";
+      
+      const ptyProcess = pty.spawn(shell, [], {
+        name: "xterm-color",
+        cols: 80,
+        rows: 24,
+        cwd: __dirname,
+        env: process.env
+      });
+
+      socket.ptyProcess = ptyProcess;
+
+      ptyProcess.onData((data) => {
+        socket.emit("terminal_output", data);
+      });
+
+      ptyProcess.onExit(() => {
+        socket.emit("terminal_output", "\r\n[Process Exited]\r\n");
+      });
+
+      // Audit Log for Terminal Start
+      if (data && data.vaultId && data.userId) {
+        mongoose.model("AuditLog").create({
+          vaultId: data.vaultId,
+          userId: data.userId,
+          action: "TERMINAL_START",
+          details: "Initiated a secure terminal session",
+          role: "developer"
+        }).catch(err => console.error("Audit log error:", err));
+      }
+    } catch (err) {
+      socket.emit("terminal_output", `\r\n[Terminal Error: ${err.message}]\r\n`);
+    }
+  });
+
+  socket.on("terminal_input", (data) => {
+    if (socket.ptyProcess) {
+      socket.ptyProcess.write(data);
+    }
+  });
+
+  socket.on("terminal_resize", (size) => {
+    if (socket.ptyProcess && size) {
+      try {
+        socket.ptyProcess.resize(size.cols, size.rows);
+      } catch (err) {}
+    }
+  });
+
   // --- DISCONNECT ---
   socket.on("disconnect", () => {
+    if (socket.ptyProcess) {
+      try { socket.ptyProcess.kill(); } catch (e) {}
+    }
+    
     if (socket.userId && userSockets.has(socket.userId)) {
       // Remove from call tracking
       callParticipants.forEach((participants, vaultId) => {

@@ -31,6 +31,80 @@ function getLanguage(name) {
   return LANG_MAP[ext] || "plaintext";
 }
 
+const buildFileTree = (files) => {
+  const root = { name: "root", children: [], isDir: true, path: "" };
+  files.forEach(f => {
+    const parts = f.name.split('/');
+    let current = root;
+    parts.forEach((part, i) => {
+      if (i === parts.length - 1) {
+        if (!f.name.endsWith('/')) {
+          current.children.push({ ...f, name: part, isDir: false });
+        } else if (part) {
+          const existing = current.children.find(c => c.name === part);
+          if (!existing) current.children.push({ name: part, children: [], isDir: true, path: f.name });
+        }
+      } else {
+        let existing = current.children.find(c => c.name === part && c.isDir);
+        if (!existing) {
+          existing = { name: part, children: [], isDir: true, path: parts.slice(0, i+1).join('/') + '/' };
+          current.children.push(existing);
+        }
+        current = existing;
+      }
+    });
+  });
+  const sortTree = (node) => {
+    node.children.sort((a, b) => {
+      if (a.isDir && !b.isDir) return -1;
+      if (!a.isDir && b.isDir) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    node.children.forEach(c => c.isDir && sortTree(c));
+  };
+  sortTree(root);
+  return root;
+};
+
+const FileTreeNode = ({ node, level, onFileClick, activeFileId, searchQuery }) => {
+  const [isOpen, setIsOpen] = useState(true);
+  if (!node.isDir) {
+    if (searchQuery && !node.name.toLowerCase().includes(searchQuery.toLowerCase())) return null;
+    return (
+      <div 
+        onClick={() => onFileClick(node)}
+        className={`flex items-center gap-1.5 px-3 py-1 cursor-pointer transition-colors group ${activeFileId === node._id ? "bg-blue-500/10 text-blue-400 border-l-2 border-blue-500" : "hover:bg-white/5 text-gray-400 border-l-2 border-transparent"}`}
+        style={{ paddingLeft: `${level * 12 + 12}px` }}
+      >
+        <FileCode size={13} className={activeFileId === node._id ? "text-blue-400" : "text-gray-500 group-hover:text-gray-300"} />
+        <span className="truncate text-[12px]">{node.name}</span>
+      </div>
+    );
+  }
+
+  const hasMatchingChildren = !searchQuery || node.children.some(c => JSON.stringify(c).toLowerCase().includes(searchQuery.toLowerCase()));
+  if (!hasMatchingChildren && level > 0) return null;
+
+  return (
+    <div>
+      {level > 0 && (
+        <div 
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex items-center gap-1.5 px-3 py-1 cursor-pointer hover:bg-white/5 text-gray-400 transition-colors group"
+          style={{ paddingLeft: `${(level - 1) * 12 + 12}px` }}
+        >
+          {isOpen ? <ChevronDown size={12} className="text-gray-500" /> : <ChevronRight size={12} className="text-gray-500" />}
+          <Folder size={13} className="text-blue-400 opacity-80" />
+          <span className="truncate text-[12px] font-semibold group-hover:text-gray-200">{node.name}</span>
+        </div>
+      )}
+      {isOpen && node.children.map((child, i) => (
+        <FileTreeNode key={i} node={child} level={level + 1} onFileClick={onFileClick} activeFileId={activeFileId} searchQuery={searchQuery} />
+      ))}
+    </div>
+  );
+};
+
 export default function CodeVaultPage() {
   const id = window.location.pathname.split("/").pop();
   const userId = localStorage.getItem("userId");
@@ -189,6 +263,45 @@ export default function CodeVaultPage() {
       toast("Save failed");
     }
     setIsSaving(false);
+  };
+
+  // ===== CREATE FILE / FOLDER =====
+  const handleCreateFile = async (isFolder = false) => {
+    const name = prompt(isFolder ? "Enter folder path (e.g. src/components/):" : "Enter file path (e.g. src/utils.js):");
+    if (!name) return;
+    const finalName = isFolder && !name.endsWith("/") ? name + "/" : name;
+    
+    try {
+      toast(`Creating ${isFolder ? "folder" : "file"}...`);
+      const buf = new ArrayBuffer(0);
+      const aesKeyRaw = window.crypto.getRandomValues(new Uint8Array(32));
+      const aesKeyStr = String.fromCharCode(...aesKeyRaw);
+      
+      const userRes = await axios.get(`${API_URL}/api/user/${userId}`);
+      const publicKey = forge.pki.publicKeyFromPem(userRes.data.publicKey);
+      const encryptedAesKey = forge.util.encode64(publicKey.encrypt(aesKeyStr, "RSA-OAEP"));
+
+      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const cryptoKey = await window.crypto.subtle.importKey("raw", aesKeyRaw, { name: "AES-GCM" }, false, ["encrypt"]);
+      const encrypted = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv, tagLength: 128 }, cryptoKey, buf);
+      const encArr = new Uint8Array(encrypted);
+      const tag = encArr.slice(-16);
+      const data = encArr.slice(0, -16);
+      const finalBlob = new Blob([iv, tag, data]);
+
+      const formData = new FormData();
+      formData.append("file", finalBlob, finalName);
+      formData.append("vaultId", id);
+      formData.append("userId", userId);
+      formData.append("encryptedKey", encryptedAesKey);
+
+      await axios.post(`${API_URL}/api/upload`, formData);
+      toast(`${isFolder ? "Folder" : "File"} created`);
+      fetchVault();
+    } catch (err) {
+      console.error(err);
+      toast("Failed to create");
+    }
   };
 
   // ===== UPLOAD =====
@@ -460,8 +573,10 @@ export default function CodeVaultPage() {
             <div className="p-3 border-b border-white/5 flex justify-between items-center">
               <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase">Explorer</span>
               <div className="flex gap-2">
-                <Plus size={13} className="cursor-pointer hover:text-white text-gray-500" onClick={() => fileInputRef.current?.click()} />
-                <Download size={13} className="cursor-pointer hover:text-white text-blue-400" onClick={downloadZip} />
+                <FileCode size={13} className="cursor-pointer hover:text-white text-gray-500" onClick={() => handleCreateFile(false)} title="New File" />
+                <Folder size={13} className="cursor-pointer hover:text-white text-gray-500" onClick={() => handleCreateFile(true)} title="New Folder" />
+                <Plus size={13} className="cursor-pointer hover:text-white text-gray-500 ml-1" onClick={() => fileInputRef.current?.click()} title="Upload File" />
+                <Download size={13} className="cursor-pointer hover:text-white text-blue-400 ml-1" onClick={downloadZip} title="Download ZIP" />
               </div>
             </div>
             <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} />
@@ -480,14 +595,14 @@ export default function CodeVaultPage() {
                 <ChevronDown size={12} /><Folder size={12} />
                 {(vault.name || "PROJECT").toUpperCase()}
               </div>
-              <div className="pl-4">
-                {files.filter(f => !searchQuery || f.name.toLowerCase().includes(searchQuery.toLowerCase())).map(f => (
-                  <div key={f._id} onClick={() => openFile(f)}
-                    className={`flex items-center gap-2 px-3 py-1 text-[12px] cursor-pointer transition-colors ${activeFileId === f._id ? "bg-blue-500/10 text-blue-400 border-l-2 border-blue-500" : "hover:bg-white/5 text-gray-400 border-l-2 border-transparent"}`}>
-                    <FileCode size={13} />
-                    <span className="truncate">{f.name}</span>
-                  </div>
-                ))}
+              <div className="pl-1">
+                <FileTreeNode 
+                  node={buildFileTree(files)} 
+                  level={0} 
+                  onFileClick={openFile} 
+                  activeFileId={activeFileId} 
+                  searchQuery={searchQuery} 
+                />
                 {files.length === 0 && <p className="text-[10px] text-gray-600 px-3 py-4">No files yet. Click + to upload.</p>}
               </div>
             </div>

@@ -1,87 +1,109 @@
-import React, { useState } from "react";
-import axios from "axios";
-import { Play, Square, Terminal, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import React, { useEffect, useRef } from "react";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import "@xterm/xterm/css/xterm.css";
+import { Terminal as TerminalIcon, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import socket from "../utils/socket";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+export default function CodeRunner({ isOpen, onToggle }) {
+  const terminalRef = useRef(null);
+  const xtermRef = useRef(null);
+  const fitAddonRef = useRef(null);
 
-const LANG_MAP = {
-  js: "javascript", jsx: "javascript", ts: "javascript", tsx: "javascript",
-  py: "python", java: "java", c: "c", cpp: "cpp", cc: "cpp"
-};
+  useEffect(() => {
+    if (!isOpen || !terminalRef.current) return;
 
-export default function CodeRunner({ code, fileName, isOpen, onToggle }) {
-  const [output, setOutput] = useState([]);
-  const [isRunning, setIsRunning] = useState(false);
+    if (!xtermRef.current) {
+      const xterm = new Terminal({
+        theme: {
+          background: "#0a0d14",
+          foreground: "#d4d4d4",
+          cursor: "#3b82f6",
+          selectionBackground: "#264f78",
+          black: "#000000",
+          red: "#ef4444",
+          green: "#10b981",
+          yellow: "#f59e0b",
+          blue: "#3b82f6",
+          magenta: "#8b5cf6",
+          cyan: "#06b6d4",
+          white: "#ffffff",
+        },
+        fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
+        fontSize: 13,
+        cursorBlink: true,
+      });
 
-  const ext = fileName?.split(".").pop()?.toLowerCase() || "";
-  const language = LANG_MAP[ext];
+      const fitAddon = new FitAddon();
+      xterm.loadAddon(fitAddon);
+      xterm.open(terminalRef.current);
+      fitAddon.fit();
 
-  const runCode = async () => {
-    if (!language || !code || isRunning) return;
-    setIsRunning(true);
-    setOutput(prev => [...prev, { type: "info", text: `▶ Running ${fileName} (${language})...`, time: new Date().toLocaleTimeString() }]);
+      xtermRef.current = xterm;
+      fitAddonRef.current = fitAddon;
 
-    try {
-      const res = await axios.post(`${API_URL}/api/execute`, { code, language });
-      if (res.data.stdout) {
-        setOutput(prev => [...prev, { type: "stdout", text: res.data.stdout, time: new Date().toLocaleTimeString() }]);
-      }
-      if (res.data.stderr) {
-        setOutput(prev => [...prev, { type: "stderr", text: res.data.stderr, time: new Date().toLocaleTimeString() }]);
-      }
-      setOutput(prev => [...prev, { type: "info", text: `✓ Completed in ${res.data.executionTime}ms`, time: new Date().toLocaleTimeString() }]);
-    } catch (err) {
-      setOutput(prev => [...prev, { type: "stderr", text: err.response?.data?.error || err.message, time: new Date().toLocaleTimeString() }]);
+      // Connect to backend
+      socket.emit("terminal_start", { 
+        vaultId: window.location.pathname.split("/").pop(), 
+        userId: localStorage.getItem("userId") 
+      });
+
+      xterm.onData((data) => {
+        socket.emit("terminal_input", data);
+      });
+
+      socket.on("terminal_output", (data) => {
+        xterm.write(data);
+      });
+
+      const resizeObserver = new ResizeObserver(() => {
+        try {
+          fitAddon.fit();
+          socket.emit("terminal_resize", { cols: xterm.cols, rows: xterm.rows });
+        } catch (err) {}
+      });
+      resizeObserver.observe(terminalRef.current);
+
+      return () => {
+        resizeObserver.disconnect();
+        socket.off("terminal_output");
+        xterm.dispose();
+        xtermRef.current = null;
+      };
+    } else {
+      setTimeout(() => {
+        if (fitAddonRef.current) fitAddonRef.current.fit();
+      }, 50);
     }
-    setIsRunning(false);
+  }, [isOpen]);
+
+  const clearTerminal = (e) => {
+    e.stopPropagation();
+    if (xtermRef.current) {
+      xtermRef.current.clear();
+    }
   };
 
   return (
     <div className={`border-t border-white/10 bg-[#0a0d14] flex flex-col transition-all ${isOpen ? "h-64" : "h-9"}`}>
       {/* Terminal Header */}
-      <div className="h-9 flex items-center justify-between px-4 bg-[#06080f] border-b border-white/5 cursor-pointer select-none" onClick={onToggle}>
+      <div className="h-9 flex items-center justify-between px-4 bg-[#06080f] border-b border-white/5 cursor-pointer select-none shrink-0" onClick={onToggle}>
         <div className="flex items-center gap-2 text-xs text-gray-400">
-          <Terminal size={13} />
+          <TerminalIcon size={13} />
           <span className="font-bold uppercase tracking-widest">Terminal</span>
-          {isRunning && <span className="text-yellow-400 animate-pulse text-[10px]">● Running</span>}
         </div>
         <div className="flex items-center gap-2">
-          {language && (
-            <button
-              onClick={(e) => { e.stopPropagation(); runCode(); }}
-              disabled={isRunning}
-              className="flex items-center gap-1 text-[10px] font-bold bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-2 py-0.5 rounded transition-colors"
-            >
-              {isRunning ? <Square size={10} /> : <Play size={10} />}
-              {isRunning ? "Stop" : "Run"}
-            </button>
-          )}
-          <button onClick={(e) => { e.stopPropagation(); setOutput([]); }} className="text-gray-500 hover:text-white">
+          <button onClick={clearTerminal} className="text-gray-500 hover:text-white p-1">
             <Trash2 size={12} />
           </button>
           {isOpen ? <ChevronDown size={14} className="text-gray-500" /> : <ChevronUp size={14} className="text-gray-500" />}
         </div>
       </div>
 
-      {/* Terminal Output */}
-      {isOpen && (
-        <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1">
-          {output.length === 0 && (
-            <p className="text-gray-600 italic">
-              {language ? `Ready to run ${language} code. Click Run or press Ctrl+Enter.` : "Select a runnable file (.js, .py, .java, .cpp)"}
-            </p>
-          )}
-          {output.map((line, i) => (
-            <div key={i} className="flex gap-2">
-              <span className="text-gray-600 text-[10px] shrink-0">{line.time}</span>
-              <pre className={`whitespace-pre-wrap break-all ${
-                line.type === "stderr" ? "text-red-400" :
-                line.type === "info" ? "text-blue-400" : "text-green-300"
-              }`}>{line.text}</pre>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Terminal Output Canvas */}
+      <div className={`flex-1 relative overflow-hidden ${!isOpen && "hidden"}`}>
+        <div ref={terminalRef} className="absolute inset-0 p-2 pl-4" />
+      </div>
     </div>
   );
 }
