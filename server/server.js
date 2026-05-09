@@ -1250,7 +1250,7 @@ app.post("/api/execute", async (req, res) => {
 const userSockets = new Map(); // userId -> Set(socketIds)
 
 // --- CALL TRACKING ---
-const callParticipants = new Map(); // vaultId -> Map(userId -> {userName, socketId})
+const activeCalls = new Map(); // vaultId -> { initiatorId, startTime, participants: Map(userId -> {userName, socketId}) }
 
 // --- EDITOR COLLABORATION TRACKING ---
 const editorRooms = new Map(); // "vaultId_fileId" -> Map(userId -> {userName, socketId, color})
@@ -1345,19 +1345,7 @@ io.on("connection", (socket) => {
     socket.leave(`call_${vaultId}`);
   });
 
-  socket.on("disconnect", () => {
-    console.log("User disconnected from socket:", socket.id);
-    // Find and cleanup any calls this socket was part of
-    activeCalls.forEach((call, vaultId) => {
-      call.participants.forEach((p, userId) => {
-        if (p.socketId === socket.id) {
-          console.log(`Auto-cleaning participant ${userId} from vault ${vaultId}`);
-          cleanupCallParticipant(vaultId, userId, socket.id);
-        }
-      });
-    });
-  });
-});
+
 
 async function cleanupCallParticipant(vaultId, userId, socketId) {
   const call = activeCalls.get(vaultId);
@@ -1532,19 +1520,23 @@ async function cleanupCallParticipant(vaultId, userId, socketId) {
 
   // --- DISCONNECT ---
   socket.on("disconnect", () => {
+    console.log("User disconnected from socket:", socket.id);
+    
     if (socket.ptyProcess) {
       try { socket.ptyProcess.kill(); } catch (e) {}
     }
     
-    if (socket.userId && userSockets.has(socket.userId)) {
-      // Remove from call tracking
-      callParticipants.forEach((participants, vaultId) => {
-        if (participants.has(socket.userId)) {
-          participants.delete(socket.userId);
-          socket.to(`call_${vaultId}`).emit("user_left_call", { userId: socket.userId });
+    // Find and cleanup any calls this socket was part of
+    activeCalls.forEach((call, vaultId) => {
+      call.participants.forEach((p, userId) => {
+        if (p.socketId === socket.id) {
+          console.log(`Auto-cleaning participant ${userId} from vault ${vaultId}`);
+          cleanupCallParticipant(vaultId, userId, socket.id);
         }
       });
+    });
 
+    if (socket.userId && userSockets.has(socket.userId)) {
       // Remove from editor tracking
       editorRooms.forEach((room, roomKey) => {
         if (room.has(socket.userId)) {
