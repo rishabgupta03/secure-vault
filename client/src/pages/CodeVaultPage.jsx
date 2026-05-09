@@ -6,7 +6,8 @@ import Editor from "@monaco-editor/react";
 import VaultChat from "./VaultChat";
 import CodeRunner from "../components/CodeRunner";
 import { useCollaboration } from "../components/CollabProvider";
-import * as JSZip from "jszip";
+import JSZip from "jszip";
+import * as Diff from 'diff';
 import {
   FileCode, Folder, History, Download, Save, RotateCcw, X, Plus,
   Code, Lock, Users, MessageSquare, ChevronDown, ChevronRight,
@@ -48,6 +49,8 @@ export default function CodeVaultPage() {
   const [toastMsg, setToastMsg] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const [showDiff, setShowDiff] = useState(null); // { version, diff }
+  const [previewContent, setPreviewContent] = useState("");
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("Developer");
@@ -227,8 +230,9 @@ export default function CodeVaultPage() {
 
   // ===== ZIP =====
   const downloadZip = async () => {
-    const zip = new JSZip();
-    const folder = zip.folder(vault?.name || "project");
+    try {
+      const zip = new (JSZip.default || JSZip)();
+      const folder = zip.folder(vault?.name || "project");
     toast("Preparing ZIP...");
     for (const file of files) {
       try {
@@ -251,12 +255,119 @@ export default function CodeVaultPage() {
     if (!file) return;
     try {
       await axios.post(`${API_URL}/api/file/${activeFileId}/restore`, { vaultId: id, userId, versionIdx: idx });
+      toast("Version restored");
+      // Re-fetch vault to get new metadata
+      await fetchVault();
+      // Re-decrypt the active file
       const content = await decryptFileContent(file);
       setOpenTabs(prev => prev.map(t => t.fileId === activeFileId ? { ...t, content, originalContent: content, dirty: false } : t));
-      fetchVault();
       setShowHistory(false);
-      toast("Version restored");
-    } catch { toast("Restore failed"); }
+      setShowDiff(null);
+    } catch (err) { 
+      console.error(err);
+      toast("Restore failed"); 
+    }
+  };
+
+  // ===== PREVIEW / DIFF =====
+  const viewVersionDiff = async (idx) => {
+    const file = files.find(f => f._id === activeFileId);
+    if (!file) return;
+    toast("Decrypting version...");
+    try {
+      // We need to fetch the specific version's data
+      // For now, let's assume we can fetch by filename (key)
+      const version = file.versions[idx];
+      const res = await axios.get(`${API_URL}/api/file/${file._id}?userId=${userId}&versionIdx=${idx}`);
+      const { file: base64File, encryptedKey } = res.data;
+      
+      // Use the same AES key if possible, or decrypt the version's key
+      const privateKeyPem = localStorage.getItem("privateKey");
+      const privateKey = forge.pki.privateKeyFromPem(privateKeyPem);
+      let aesKey;
+      try {
+        aesKey = privateKey.decrypt(forge.util.decode64(encryptedKey), "RSA-OAEP");
+      } catch {
+        aesKey = privateKey.decrypt(forge.util.decode64(encryptedKey), "RSA-OAEP", {
+          md: forge.md.sha1.create(), mgf1: { md: forge.md.sha1.create() }
+        });
+      }
+
+      const fileBytes = forge.util.decode64(base64File);
+      const buffer = new Uint8Array(fileBytes.split("").map(c => c.charCodeAt(0)));
+      const iv = buffer.slice(0, 12);
+      const tag = buffer.slice(12, 28);
+      const encData = buffer.slice(28);
+
+      const cryptoKey = await window.crypto.subtle.importKey(
+        "raw", new Uint8Array(aesKey.split("").map(c => c.charCodeAt(0))),
+        { name: "AES-GCM" }, false, ["decrypt"]
+      );
+      const combined = new Uint8Array(encData.length + tag.length);
+      combined.set(encData); combined.set(tag, encData.length);
+
+      const decrypted = await window.crypto.subtle.decrypt(
+        { name: "AES-GCM", iv, tagLength: 128 }, cryptoKey, combined
+      );
+      const versionContent = new TextDecoder().decode(decrypted);
+      
+      const currentContent = openTabs.find(t => t.fileId === activeFileId)?.content || "";
+      const diff = Diff.diffLines(versionContent, currentContent);
+      
+      setShowDiff({ version: version.version, diff, content: versionContent });
+    } catch (err) {
+      console.error(err);
+      toast("Failed to preview version");
+    }
+  };
+
+  const downloadVersion = async (idx) => {
+    const file = files.find(f => f._id === activeFileId);
+    if (!file) return;
+    toast("Decrypting version for download...");
+    try {
+      const version = file.versions[idx];
+      const res = await axios.get(`${API_URL}/api/file/${file._id}?userId=${userId}&versionIdx=${idx}`);
+      const { file: base64File, encryptedKey } = res.data;
+      
+      const privateKeyPem = localStorage.getItem("privateKey");
+      const privateKey = forge.pki.privateKeyFromPem(privateKeyPem);
+      let aesKey;
+      try {
+        aesKey = privateKey.decrypt(forge.util.decode64(encryptedKey), "RSA-OAEP");
+      } catch {
+        aesKey = privateKey.decrypt(forge.util.decode64(encryptedKey), "RSA-OAEP", {
+          md: forge.md.sha1.create(), mgf1: { md: forge.md.sha1.create() }
+        });
+      }
+
+      const fileBytes = forge.util.decode64(base64File);
+      const buffer = new Uint8Array(fileBytes.split("").map(c => c.charCodeAt(0)));
+      const iv = buffer.slice(0, 12);
+      const tag = buffer.slice(12, 28);
+      const encData = buffer.slice(28);
+
+      const cryptoKey = await window.crypto.subtle.importKey(
+        "raw", new Uint8Array(aesKey.split("").map(c => c.charCodeAt(0))),
+        { name: "AES-GCM" }, false, ["decrypt"]
+      );
+      const combined = new Uint8Array(encData.length + tag.length);
+      combined.set(encData); combined.set(tag, encData.length);
+
+      const decrypted = await window.crypto.subtle.decrypt(
+        { name: "AES-GCM", iv, tagLength: 128 }, cryptoKey, combined
+      );
+
+      const blob = new Blob([decrypted], { type: "text/plain" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `v${version.version}-${file.name}`;
+      link.click();
+      toast(`Downloaded v${version.version}`);
+    } catch (err) {
+      console.error(err);
+      toast("Failed to download version");
+    }
   };
   
   // ===== INVITE =====
@@ -436,6 +547,35 @@ export default function CodeVaultPage() {
               <div className="absolute inset-0 bg-[#06080f] p-6 overflow-y-auto">
                 <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><History className="text-blue-400" size={18} /> Version History: {activeTab.name}</h2>
                 <div className="space-y-3 max-w-2xl">
+                  {showDiff && (
+                    <div className="mb-6 p-4 bg-[#0a0d14] border border-blue-500/30 rounded-2xl animate-fade-in">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-sm font-bold text-blue-400 uppercase tracking-widest">Diff: Version {showDiff.version} vs Current</h3>
+                        <button onClick={() => setShowDiff(null)} className="text-gray-500 hover:text-white"><X size={14}/></button>
+                      </div>
+                      <div className="bg-black/40 rounded-lg p-4 font-mono text-[11px] max-h-60 overflow-y-auto">
+                        {showDiff.diff.map((part, i) => (
+                          <div key={i} className={part.added ? "text-green-400" : part.removed ? "text-red-400 bg-red-400/5" : "text-gray-500"}>
+                            {part.added ? "+ " : part.removed ? "- " : "  "}{part.value}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-4 flex gap-3">
+                        <button 
+                          onClick={() => {
+                            setOpenTabs(prev => prev.map(t => t.fileId === activeFileId ? { ...t, content: showDiff.content, dirty: true } : t));
+                            setShowDiff(null);
+                            setShowHistory(false);
+                            toast("Loaded version into editor");
+                          }}
+                          className="flex-1 py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded-xl text-[10px] font-bold border border-blue-500/20 transition-all"
+                        >
+                          Load into Editor
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="p-4 bg-blue-900/10 border border-blue-500/20 rounded-xl flex justify-between items-center">
                     <div>
                       <p className="font-bold text-white text-sm">Current Version</p>
@@ -444,15 +584,23 @@ export default function CodeVaultPage() {
                     <span className="text-[9px] font-bold bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded uppercase">Active</span>
                   </div>
                   {activeFile?.versions?.slice().reverse().map((v, i) => (
-                    <div key={i} className="p-4 bg-white/5 border border-white/5 rounded-xl flex justify-between items-center">
-                      <div>
+                    <div key={i} className="p-4 bg-white/5 border border-white/5 rounded-xl flex justify-between items-center group">
+                      <div className="flex-1">
                         <p className="font-semibold text-sm">Checkpoint {v.version}</p>
                         <p className="text-[10px] text-gray-500">{new Date(v.createdAt).toLocaleString()}</p>
                         <p className="text-[10px] text-gray-400 mt-1 italic">"{v.diffSummary || "Update"}"</p>
                       </div>
-                      <button onClick={() => restoreVersion(activeFile.versions.indexOf(v))} className="text-[10px] bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded flex items-center gap-1 border border-white/10">
-                        <RotateCcw size={11} /> Restore
-                      </button>
+                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => viewVersionDiff(activeFile.versions.indexOf(v))} className="text-[10px] bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg flex items-center gap-1 border border-white/10">
+                          <Eye size={11} /> Preview
+                        </button>
+                        <button onClick={() => downloadVersion(activeFile.versions.indexOf(v))} className="text-[10px] bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg flex items-center gap-1 border border-white/10">
+                          <Download size={11} /> Download
+                        </button>
+                        <button onClick={() => restoreVersion(activeFile.versions.indexOf(v))} className="text-[10px] bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-1">
+                          <RotateCcw size={11} /> Restore
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {(!activeFile?.versions || activeFile.versions.length === 0) && <p className="text-gray-600 text-center py-8">No previous versions</p>}
@@ -578,6 +726,14 @@ export default function CodeVaultPage() {
           <span className="flex items-center gap-1"><Shield size={10} className="text-green-400" /> AES-256-GCM</span>
           {activeTab && <span>{getLanguage(activeTab.name)}</span>}
           {collaborators.length > 0 && <span className="text-blue-400">{collaborators.length} collaborator{collaborators.length > 1 ? "s" : ""}</span>}
+          <div className="h-3 w-px bg-white/10 mx-1" />
+          <button 
+            onClick={() => setShowTerminal(!showTerminal)} 
+            className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-colors ${showTerminal ? "bg-blue-500/20 text-blue-400" : "hover:bg-white/5"}`}
+          >
+            <Terminal size={11} />
+            <span>Terminal</span>
+          </button>
         </div>
         <div className="flex items-center gap-4">
           <span>{files.length} files</span>

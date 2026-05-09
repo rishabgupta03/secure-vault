@@ -720,69 +720,48 @@ app.post("/api/file/:fileId/restore", async (req, res) => {
 app.get("/api/file/:fileId", async (req, res) => {
   try {
     const { fileId } = req.params;
-    const { userId } = req.query;
+    const { userId, versionIdx } = req.query;
 
-    // ✅ VALIDATE OBJECT ID FIRST (IMPORTANT FIX)
     if (!mongoose.Types.ObjectId.isValid(fileId)) {
       return res.status(400).json({ message: "Invalid fileId" });
     }
 
-    // ✅ FIND VAULT CONTAINING FILE
     const vault = await Vault.findOne({
       "files._id": new mongoose.Types.ObjectId(fileId)
     });
 
-    if (!vault) {
-      return res.status(404).json({ message: "Vault not found" });
-    }
+    if (!vault) return res.status(404).json({ message: "Vault not found" });
 
-    // ✅ CHECK USER ACCESS
     const isOwner = vault.userId === userId;
     const member = vault.members.find(m => m.userId === userId);
 
-    if (!isOwner && !member) {
-      await createLog(vault._id, userId, "DOWNLOAD_DENIED", `Attempted to download without membership`, "unknown", fileId);
-      return res.status(403).json({ message: "Access denied" });
-    }
+    if (!isOwner && !member) return res.status(403).json({ message: "Access denied" });
 
     const role = isOwner ? "owner" : member.role.toLowerCase();
-    if (!hasPermission(role, "view")) {
-      await createLog(vault._id, userId, "DOWNLOAD_DENIED", `Attempted to download without view permission`, role, fileId);
-      return res.status(403).json({ message: "Access denied: missing view permission" });
+    if (!hasPermission(role, "view")) return res.status(403).json({ message: "Access denied: missing view permission" });
+
+    const file = vault.files.find(f => f._id.toString() === fileId);
+    if (!file) return res.status(404).json({ message: "File not found" });
+
+    // Handle Versioning
+    let targetKey = file.key;
+    if (versionIdx !== undefined) {
+      const idx = parseInt(versionIdx);
+      if (file.versions && file.versions[idx]) {
+        targetKey = file.versions[idx].key;
+      }
     }
 
-    // ✅ FIND FILE SAFELY
-    const file = vault.files.find(
-      f => f._id.toString() === fileId
-    );
+    const keyEntry = await FileKey.findOne({ fileId, userId });
+    if (!keyEntry) return res.status(403).json({ message: "No key for this user" });
 
-    if (!file) {
-      return res.status(404).json({ message: "File not found" });
-    }
-
-    // ✅ GET USER KEY
-    const keyEntry = await FileKey.findOne({
-      fileId,
-      userId
-    });
-
-    if (!keyEntry) {
-      return res.status(403).json({ message: "No key for this user" });
-    }
-
-    // ✅ READ ENCRYPTED FILE
-    const filePath = path.join(UPLOAD_DIR, file.key);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "File missing" });
-    }
+    const filePath = path.join(UPLOAD_DIR, targetKey);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ message: "File missing" });
 
     const encryptedFile = fs.readFileSync(filePath);
 
-    // ✅ SEND CLIENT-ENCRYPTED BYTES DIRECTLY (no server layer to strip)
     const logAction = req.query.action === "view" ? "VIEW_FILE" : "DOWNLOAD_FILE";
-    const logMsg = req.query.action === "view" ? `Opened ${file.name} for viewing/editing` : `Downloaded ${file.name}`;
-    await createLog(vault._id, userId, logAction, logMsg, role, fileId);
+    await createLog(vault._id, userId, logAction, `Accessed ${file.name}${versionIdx !== undefined ? ` (v${versionIdx})` : ""}`, role, fileId);
 
     res.json({
       file: encryptedFile.toString("base64"),
