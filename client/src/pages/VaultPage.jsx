@@ -1062,7 +1062,7 @@ export default function VaultPage() {
       const res = await axios.get(
         `${API_URL}/api/vault/${id}`
       );
-      console.log("VAULT DATA:", res.data); // DEBUG PIN
+
       setVault(res.data);
     } catch (err) {
       console.error("Fetch error:", err);

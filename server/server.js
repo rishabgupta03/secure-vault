@@ -1324,46 +1324,58 @@ io.on("connection", (socket) => {
 
   socket.on("leave_call", async (data) => {
     const { vaultId, userId } = data;
-    const call = activeCalls.get(vaultId);
-    
-    if (call) {
-      const isInitiator = call.initiatorId === userId;
-      const participant = call.participants.get(userId);
-      const userName = participant ? participant.userName : "User";
-      
-      call.participants.delete(userId);
-      
-      if (isInitiator) {
-        // Log Call End
-        const duration = Math.round((new Date() - call.startTime) / 1000); // seconds
-        const mins = Math.floor(duration / 60);
-        const secs = duration % 60;
-        
-        try {
-          const vault = await Vault.findById(vaultId);
-          if (vault) {
-            vault.activity.push({ 
-              action: `Ended team call (Duration: ${mins}m ${secs}s)`, 
-              userId 
-            });
-            await vault.save();
-            await createLog(vaultId, userId, "CALL_END", `Call ended after ${mins}m ${secs}s`, "owner");
-          }
-        } catch (e) { console.error("Call End Log Error", e); }
-
-        // Tell everyone to leave
-        io.to(`call_${vaultId}`).emit("call_ended_by_initiator");
-        activeCalls.delete(vaultId);
-      } else {
-        socket.to(`call_${vaultId}`).emit("user_left_call", { userId, socketId: socket.id, userName });
-      }
-
-      if (call.participants.size === 0) {
-        activeCalls.delete(vaultId);
-      }
-    }
+    cleanupCallParticipant(vaultId, userId, socket.id);
     socket.leave(`call_${vaultId}`);
   });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected from socket:", socket.id);
+    // Find and cleanup any calls this socket was part of
+    activeCalls.forEach((call, vaultId) => {
+      call.participants.forEach((p, userId) => {
+        if (p.socketId === socket.id) {
+          console.log(`Auto-cleaning participant ${userId} from vault ${vaultId}`);
+          cleanupCallParticipant(vaultId, userId, socket.id);
+        }
+      });
+    });
+  });
+});
+
+async function cleanupCallParticipant(vaultId, userId, socketId) {
+  const call = activeCalls.get(vaultId);
+  if (!call) return;
+
+  const isInitiator = call.initiatorId === userId;
+  const participant = call.participants.get(userId);
+  const userName = participant ? participant.userName : "User";
+
+  call.participants.delete(userId);
+
+  if (isInitiator) {
+    const duration = Math.round((new Date() - call.startTime) / 1000);
+    const mins = Math.floor(duration / 60);
+    const secs = duration % 60;
+
+    try {
+      const vault = await mongoose.model("Vault").findById(vaultId);
+      if (vault) {
+        vault.activity.push({ action: `Ended team call (Duration: ${mins}m ${secs}s)`, userId });
+        await vault.save();
+        await createLog(vaultId, userId, "CALL_END", `Call ended after ${mins}m ${secs}s`, "owner");
+      }
+    } catch (e) { console.error("Call End Log Error", e); }
+
+    io.to(`call_${vaultId}`).emit("call_ended_by_initiator");
+    activeCalls.delete(vaultId);
+  } else {
+    io.to(`call_${vaultId}`).emit("user_left_call", { userId, socketId, userName });
+  }
+
+  if (call.participants.size === 0) {
+    activeCalls.delete(vaultId);
+  }
+}
 
   socket.on("webrtc_offer", (data) => {
     // Send to specific user
