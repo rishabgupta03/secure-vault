@@ -778,6 +778,18 @@ app.get("/api/file/:fileId", async (req, res) => {
   }
 });
 
+// ================= GET FILE KEY =================
+app.get("/api/file-key/:fileId/:userId", async (req, res) => {
+  try {
+    const { fileId, userId } = req.params;
+    const keyEntry = await FileKey.findOne({ fileId, userId });
+    if (!keyEntry) return res.status(404).json({ message: "Key not found for this user" });
+    res.json({ encryptedKey: keyEntry.encryptedKey });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch key" });
+  }
+});
+
 // ================= SHARE FILE KEY (ZERO KNOWLEDGE) =================
 app.post("/api/share-file-key", async (req, res) => {
   try {
@@ -912,7 +924,7 @@ app.get("/api/user-by-email/:email", async (req, res) => {
 
   if (!user) return res.status(404).json({ message: "Not found" });
 
-  res.json({ _id: user._id });
+  res.json({ _id: user._id, publicKey: user.publicKey });
 });
 app.get("/api/user/:id", async (req, res) => {
   try {
