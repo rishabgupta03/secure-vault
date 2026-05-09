@@ -247,7 +247,7 @@ app.post("/api/logout", async (req, res) => {
 // CREATE VAULT
 app.post("/api/create-vault", async (req, res) => {
   try {
-    const { userId, name, description, visibility, encryption, pin } = req.body;
+    const { userId, name, description, visibility, encryption, pin, type } = req.body;
 
     if (!userId || !name) {
       return res.status(400).json({ message: "Missing fields" });
@@ -260,6 +260,7 @@ app.post("/api/create-vault", async (req, res) => {
       visibility,
       encryption,
       pin,
+      type: type || "file",
 
       members: [
         {
