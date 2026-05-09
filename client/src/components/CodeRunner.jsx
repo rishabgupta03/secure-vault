@@ -56,7 +56,7 @@ export default function CodeRunner({ code, fileName, isOpen, onToggle }) {
   };
 
   return (
-    <div className={`border-t border-white/10 bg-[#0a0d14] flex flex-col transition-all ${isOpen ? "h-64" : "h-9"}`}>
+    <div className={`border-t border-white/10 bg-[#0a0d14] flex flex-col transition-all ${isOpen ? "h-80" : "h-9"}`}>
       {/* Terminal Header */}
       <div className="h-9 flex items-center justify-between px-4 bg-[#06080f] border-b border-white/5 cursor-pointer select-none shrink-0" onClick={onToggle}>
         <div className="flex items-center gap-3">
@@ -75,14 +75,6 @@ export default function CodeRunner({ code, fileName, isOpen, onToggle }) {
         <div className="flex items-center gap-2">
           {isOpen && (
             <>
-              <input
-                type="text"
-                placeholder="Standard Input (e.g. for scanf)"
-                value={stdin}
-                onChange={(e) => setStdin(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                className="bg-[#0b0f1a] border border-white/10 text-xs text-gray-300 px-2 py-1 rounded w-48 outline-none focus:border-blue-500 transition-colors placeholder:text-gray-600"
-              />
               <button 
                 onClick={runCode}
                 disabled={isRunning || !fileName}
@@ -103,17 +95,34 @@ export default function CodeRunner({ code, fileName, isOpen, onToggle }) {
         </div>
       </div>
 
-      {/* Terminal Output */}
-      <div className={`flex-1 overflow-auto p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap ${!isOpen && "hidden"}`}>
-        {output ? (
-          <div className={output.includes("[ERROR]") || output.includes("[SERVER ERROR]") ? "text-red-400" : "text-gray-300"}>
-            {output}
+      {/* Terminal Content */}
+      <div className={`flex-1 flex flex-col overflow-hidden ${!isOpen && "hidden"}`}>
+        {/* Input Area */}
+        <div className="p-3 border-b border-white/5 flex flex-col gap-2 shrink-0">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Standard Input (stdin)</label>
+            <span className="text-[9px] text-gray-600 italic">Provide inputs for scanf() / input() here</span>
           </div>
-        ) : (
-          <div className="text-gray-600 italic h-full flex items-center justify-center">
-            {fileName ? `Click "Run Code" to execute ${fileName} securely in the cloud sandbox.` : "Open a file to use the Cloud Runner."}
-          </div>
-        )}
+          <textarea
+            placeholder="Type inputs here (e.g. 12345)..."
+            value={stdin}
+            onChange={(e) => setStdin(e.target.value)}
+            className="w-full h-16 bg-white/5 border border-white/10 rounded-lg p-2 text-xs font-mono text-gray-300 outline-none focus:border-blue-500/50 transition-all resize-none"
+          />
+        </div>
+
+        {/* Output Area */}
+        <div className="flex-1 overflow-auto p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap">
+          {output ? (
+            <div className={output.includes("[ERROR]") || output.includes("[SERVER ERROR]") ? "text-red-400" : "text-gray-300"}>
+              {output}
+            </div>
+          ) : (
+            <div className="text-gray-600 italic h-full flex items-center justify-center">
+              {fileName ? `Click "Run Code" to execute ${fileName} securely.` : "Open a file to use the Cloud Runner."}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

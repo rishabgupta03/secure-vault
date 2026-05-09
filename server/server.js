@@ -727,14 +727,13 @@ app.get("/api/file/:fileId", async (req, res) => {
       return res.status(400).json({ message: "Invalid fileId" });
     }
 
-    const vault = await Vault.findOne({
-      $or: [
-        { "files._id": new mongoose.Types.ObjectId(fileId) },
-        { "files._id": fileId }
-      ]
-    });
+    let vault = await Vault.findOne({ "files._id": new mongoose.Types.ObjectId(fileId) });
 
-    if (!vault) return res.status(404).json({ message: "Vault not found" });
+    if (!vault) {
+      vault = await Vault.findOne({ "files._id": fileId });
+    }
+
+    if (!vault) return res.status(404).json({ message: "File or Vault not found" });
 
     const isOwner = vault.userId === userId;
     const member = vault.members.find(m => m.userId === userId);
