@@ -3,7 +3,10 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { Terminal as TerminalIcon, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
-import socket from "../utils/socket";
+import { io } from "socket.io-client";
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const socket = io(API_URL);
 
 export default function CodeRunner({ isOpen, onToggle }) {
   const terminalRef = useRef(null);
