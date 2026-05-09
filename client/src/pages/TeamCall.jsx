@@ -20,6 +20,7 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
   const [callDuration, setCallDuration] = useState(0);
   const peersRef = useRef({}); // socketId -> RTCPeerConnection
   const [remoteStreams, setRemoteStreams] = useState({}); // socketId -> MediaStream
+  const [lastLeft, setLastLeft] = useState(null);
 
   // WebRTC Config
   const rtcConfig = {
@@ -183,8 +184,17 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
           }
         });
 
+        socket.on("call_ended_by_initiator", () => {
+          console.log("Call ended by initiator");
+          alert("The call has been ended by the initiator.");
+          onLeave();
+        });
+
         socket.on("user_left_call", (data) => {
-          console.log("User left call:", data.userId);
+          console.log("User left call:", data.userName);
+          setLastLeft(data.userName);
+          setTimeout(() => setLastLeft(null), 5000);
+
           if (peersRef.current[data.socketId]) {
             peersRef.current[data.socketId].close();
             delete peersRef.current[data.socketId];
@@ -330,6 +340,13 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
             <p className="text-[10px] text-gray-500 font-mono">Session ID: SPV-CALL-{vaultId.substring(0,8).toUpperCase()}</p>
           </div>
         </div>
+
+        {/* User Left Toast */}
+        {lastLeft && (
+          <div className="absolute top-10 right-10 bg-red-500/10 border border-red-500/20 px-6 py-3 rounded-2xl animate-bounce-in backdrop-blur-md">
+             <p className="text-red-400 font-bold text-sm">? {lastLeft} left the call</p>
+          </div>
+        )}
       </div>
 
       {/* 3. FLOATING CONTROL BAR */}

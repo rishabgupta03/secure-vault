@@ -1288,30 +1288,80 @@ io.on("connection", (socket) => {
     const { vaultId, userId, userName } = data;
     socket.join(`call_${vaultId}`);
     
-    if (!callParticipants.has(vaultId)) {
-      callParticipants.set(vaultId, new Map());
+    if (!activeCalls.has(vaultId)) {
+      activeCalls.set(vaultId, { 
+        initiatorId: userId, 
+        startTime: new Date(), 
+        participants: new Map() 
+      });
     }
-    callParticipants.get(vaultId).set(userId, { userName, socketId: socket.id });
     
-    const currentParticipants = Array.from(callParticipants.get(vaultId).values());
+    const call = activeCalls.get(vaultId);
+    call.participants.set(userId, { userName, socketId: socket.id });
+    
+    const currentParticipants = Array.from(call.participants.values());
     socket.emit("current_participants", currentParticipants);
-    
-    socket.to(`call_${vaultId}`).emit("user_joined_call", data);
+    socket.to(`call_${vaultId}`).emit("user_joined_call", { ...data, socketId: socket.id });
   });
 
-  socket.on("start_call", (data) => {
+  socket.on("start_call", async (data) => {
+    const { vaultId, callerId, callerName } = data;
     io.emit("incoming_call_alert", data);
+    
+    // Log Call Start
+    try {
+      const vault = await Vault.findById(vaultId);
+      if (vault) {
+        vault.activity.push({ 
+          action: `Started a team call`, 
+          userId: callerId 
+        });
+        await vault.save();
+        await createLog(vaultId, callerId, "CALL_START", `Call started by ${callerName}`, "owner");
+      }
+    } catch (e) { console.error("Call Log Error", e); }
   });
 
-  socket.on("leave_call", (data) => {
+  socket.on("leave_call", async (data) => {
     const { vaultId, userId } = data;
-    if (callParticipants.has(vaultId)) {
-      callParticipants.get(vaultId).delete(userId);
-      if (callParticipants.get(vaultId).size === 0) {
-        callParticipants.delete(vaultId);
+    const call = activeCalls.get(vaultId);
+    
+    if (call) {
+      const isInitiator = call.initiatorId === userId;
+      const participant = call.participants.get(userId);
+      const userName = participant ? participant.userName : "User";
+      
+      call.participants.delete(userId);
+      
+      if (isInitiator) {
+        // Log Call End
+        const duration = Math.round((new Date() - call.startTime) / 1000); // seconds
+        const mins = Math.floor(duration / 60);
+        const secs = duration % 60;
+        
+        try {
+          const vault = await Vault.findById(vaultId);
+          if (vault) {
+            vault.activity.push({ 
+              action: `Ended team call (Duration: ${mins}m ${secs}s)`, 
+              userId 
+            });
+            await vault.save();
+            await createLog(vaultId, userId, "CALL_END", `Call ended after ${mins}m ${secs}s`, "owner");
+          }
+        } catch (e) { console.error("Call End Log Error", e); }
+
+        // Tell everyone to leave
+        io.to(`call_${vaultId}`).emit("call_ended_by_initiator");
+        activeCalls.delete(vaultId);
+      } else {
+        socket.to(`call_${vaultId}`).emit("user_left_call", { userId, socketId: socket.id, userName });
+      }
+
+      if (call.participants.size === 0) {
+        activeCalls.delete(vaultId);
       }
     }
-    socket.to(`call_${vaultId}`).emit("user_left_call", data);
     socket.leave(`call_${vaultId}`);
   });
 
