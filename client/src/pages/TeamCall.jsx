@@ -104,28 +104,27 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
           console.log("Current participants in vault:", list);
           const others = list.filter(p => p.socketId !== socket.id);
           setParticipants(others);
-          
-          // As the new joiner, we initiate connections to everyone already in the call
-          for (const p of others) {
-            const pc = createPeerConnection(p.socketId);
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            
-            console.log("Sending WebRTC offer to:", p.userName);
-            socket.emit("webrtc_offer", {
-              targetSocketId: p.socketId,
-              offer,
-              callerId: userId,
-              callerName: userName
-            });
-          }
+          // New joiner just waits for offers from existing participants
         });
 
-        socket.on("user_joined_call", (data) => {
+        socket.on("user_joined_call", async (data) => {
           console.log("User joined call:", data.userName);
           setParticipants(prev => {
             if (prev.find(p => p.socketId === data.socketId)) return prev;
             return [...prev, data];
+          });
+
+          // We are an existing participant, so we send an offer to the new joiner
+          const pc = createPeerConnection(data.socketId);
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          
+          console.log("Sending WebRTC offer to new joiner:", data.userName);
+          socket.emit("webrtc_offer", {
+            targetSocketId: data.socketId,
+            offer,
+            callerId: userId,
+            callerName: userName
           });
         });
 
@@ -223,6 +222,23 @@ export default function TeamCall({ vaultId, vault, onLeave }) {
       socket.emit("leave_call", { vaultId, userId });
     };
   }, [vaultId, userId]);
+
+  // Sync Mute/Video states with tracks
+  useEffect(() => {
+    if (streamRef.current) {
+      streamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = isMicOn;
+      });
+    }
+  }, [isMicOn]);
+
+  useEffect(() => {
+    if (streamRef.current) {
+      streamRef.current.getVideoTracks().forEach(track => {
+        track.enabled = isVideoOn;
+      });
+    }
+  }, [isVideoOn]);
 
   return (
     <div className="fixed inset-0 z-[100] bg-[#02040a] text-white flex flex-col font-sans overflow-hidden">
