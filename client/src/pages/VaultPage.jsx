@@ -644,12 +644,15 @@
 import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import forge from "node-forge";
+import { io } from "socket.io-client";
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import * as Diff from 'diff';
 import VaultChat from "./VaultChat";
 import TeamCall from "./TeamCall";
 import VaultEditor from "../components/VaultEditor";
+
+const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
 
 import {
   Users as UsersIcon,
@@ -770,6 +773,11 @@ export default function VaultPage() {
   const [inviteRole, setInviteRole] = useState("Viewer");
   const [sortOption, setSortOption] = useState("date-desc");
   const [memberDetailsMap, setMemberDetailsMap] = useState({});
+  const [meetings, setMeetings] = useState([]);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [newMeetingTitle, setNewMeetingTitle] = useState("");
+  const [newMeetingTime, setNewMeetingTime] = useState("");
+  const [incomingCall, setIncomingCall] = useState(null);
   
   const [globalUnread, setGlobalUnread] = useState(0);
   const [toastMessage, setToastMessage] = useState(null);
@@ -803,6 +811,74 @@ export default function VaultPage() {
       fetchMemberDetails();
     }
   }, [activeTab, vault?.members]);
+
+  const fetchMeetings = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/vault/${id}/meetings`);
+      setMeetings(res.data);
+    } catch (err) {
+      console.error("Failed to fetch meetings", err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "calls") {
+      fetchMeetings();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    socket.emit("user_connected", userId);
+    
+    socket.on("incoming_call_alert", (data) => {
+      // Only show if user is a member of the vault
+      if (vault && vault.members.some(m => m.userId === userId)) {
+        if (data.vaultId === id && data.callerId !== userId) {
+          setIncomingCall(data);
+          // Auto-hide after 15 seconds
+          setTimeout(() => setIncomingCall(null), 15000);
+        }
+      }
+    });
+
+    socket.on("meeting_scheduled", (data) => {
+      if (data.vaultId === id) {
+        fetchMeetings();
+      }
+    });
+
+    return () => {
+      socket.off("incoming_call_alert");
+      socket.off("meeting_scheduled");
+    };
+  }, [id, vault, userId]);
+
+  const scheduleMeeting = async () => {
+    try {
+      if (!newMeetingTitle || !newMeetingTime) return alert("Please fill all fields");
+      await axios.post(`${API_URL}/api/vault/${id}/meetings`, {
+        title: newMeetingTitle,
+        startTime: newMeetingTime,
+        scheduledBy: userId
+      });
+      setShowScheduleModal(false);
+      setNewMeetingTitle("");
+      setNewMeetingTime("");
+      fetchMeetings();
+    } catch (err) {
+      alert("Failed to schedule meeting");
+    }
+  };
+
+  const startInstantCall = () => {
+    socket.emit("start_call", {
+      vaultId: id,
+      vaultName: vault.name,
+      callerId: userId,
+      callerName: localStorage.getItem("userName") || "A teammate"
+    });
+    setActiveTab("in-call");
+  };
 
   // ================= FILE CLICK (DECRYPT / EDIT) =================
   const handleFileClick = async (file) => {
@@ -1460,40 +1536,67 @@ return (
               <h2 className="text-2xl font-bold">Secure Team Calls</h2>
               <p className="text-sm text-gray-500">Scheduled and instant end-to-end encrypted video sessions</p>
             </div>
-            <button 
-              onClick={() => setActiveTab("in-call")}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center gap-2"
-            >
-              <span>+</span> Start Instant Call
-            </button>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowScheduleModal(true)}
+                className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl font-bold transition-all flex items-center gap-2"
+              >
+                📅 Schedule Meeting
+              </button>
+              <button 
+                onClick={startInstantCall}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center gap-2"
+              >
+                <span>+</span> Start Instant Call
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="p-6 bg-[#06080f] border border-white/5 rounded-2xl flex flex-col gap-4">
-              <div className="flex justify-between items-start">
-                <div className="p-3 bg-purple-500/10 rounded-xl text-purple-400">
-                  <span className="text-xl">📅</span>
+            {meetings.map((m, idx) => (
+              <div key={idx} className="p-6 bg-[#06080f] border border-white/5 rounded-2xl flex flex-col gap-4">
+                <div className="flex justify-between items-start">
+                  <div className="p-3 bg-purple-500/10 rounded-xl text-purple-400">
+                    <span className="text-xl">📅</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest bg-white/5 px-2 py-1 rounded">
+                    {new Date(m.startTime) > new Date() ? "Scheduled" : "Started"}
+                  </span>
                 </div>
-                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest bg-white/5 px-2 py-1 rounded">Scheduled</span>
+                <div>
+                  <h3 className="font-bold text-lg">{m.title}</h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {new Date(m.startTime).toLocaleString()} • Team Session
+                  </p>
+                </div>
+                <button 
+                  onClick={() => {
+                    if (new Date(m.startTime) <= new Date()) {
+                      setActiveTab("in-call");
+                    } else {
+                      alert("Reminder set! We'll notify you when it starts.");
+                    }
+                  }}
+                  className={`w-full py-2 rounded-lg text-xs font-semibold transition-all ${
+                    new Date(m.startTime) <= new Date() 
+                    ? "bg-blue-600 hover:bg-blue-700" 
+                    : "bg-white/5 hover:bg-white/10"
+                  }`}
+                >
+                  {new Date(m.startTime) <= new Date() ? "Join Meeting" : "Set Reminder"}
+                </button>
               </div>
-              <div>
-                <h3 className="font-bold text-lg">Weekly Security Sprint</h3>
-                <p className="text-xs text-gray-500 mt-1">Today at 4:30 PM • 12 Attendees</p>
-              </div>
-              <button className="w-full py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-semibold transition-all">Set Reminder</button>
-            </div>
+            ))}
             
-            <div className="p-6 bg-[#06080f] border border-white/5 rounded-2xl flex flex-col gap-4 opacity-50 grayscale hover:grayscale-0 hover:opacity-100 transition-all cursor-pointer">
-              <div className="flex justify-between items-start">
-                <div className="p-3 bg-blue-500/10 rounded-xl text-blue-400">
-                  <span className="text-xl">📞</span>
-                </div>
+            {meetings.length === 0 && (
+              <div className="col-span-full py-20 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-[2rem]">
+                 <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
+                    <span className="text-2xl text-gray-500">📞</span>
+                 </div>
+                 <p className="text-gray-500 font-medium">No meetings scheduled yet</p>
+                 <button onClick={() => setShowScheduleModal(true)} className="mt-4 text-blue-400 text-sm font-bold hover:underline">Schedule your first meeting</button>
               </div>
-              <div>
-                <h3 className="font-bold text-lg">Start a New Meeting</h3>
-                <p className="text-xs text-gray-500 mt-1">Generate a secure link to share with anyone</p>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       ) : activeTab === "in-call" ? (
@@ -1673,8 +1776,82 @@ return (
         </div>
       </div>
     )}
-  </div>
-);
+
+      {/* SCHEDULE MODAL */}
+      {showScheduleModal && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="bg-[#0b0f1a] w-full max-w-md rounded-3xl border border-white/10 p-8 shadow-2xl">
+            <h2 className="text-2xl font-bold mb-6">Schedule Team Meeting</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">Meeting Title</label>
+                <input 
+                  type="text" 
+                  value={newMeetingTitle}
+                  onChange={(e) => setNewMeetingTitle(e.target.value)}
+                  placeholder="e.g. Quarterly Security Review"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-blue-500 transition-all"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">Start Time</label>
+                <input 
+                  type="datetime-local" 
+                  value={newMeetingTime}
+                  onChange={(e) => setNewMeetingTime(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-blue-500 transition-all text-white"
+                />
+              </div>
+              <div className="pt-4 flex gap-3">
+                <button 
+                  onClick={() => setShowScheduleModal(false)}
+                  className="flex-1 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-bold transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={scheduleMeeting}
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
+                >
+                  Schedule
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* INCOMING CALL TOAST */}
+      {incomingCall && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[200] w-full max-w-md animate-bounce-in">
+          <div className="bg-[#0b0f1a] border-2 border-blue-500/50 rounded-3xl p-6 shadow-[0_0_50px_rgba(37,99,235,0.3)] flex items-center gap-6">
+            <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center animate-pulse">
+               <PhoneIcon size={32} className="text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="text-xs font-black text-blue-400 uppercase tracking-widest mb-1">Incoming Call</p>
+              <h3 className="text-lg font-bold truncate">{incomingCall.callerName} started a call</h3>
+              <p className="text-xs text-gray-500">in {incomingCall.vaultName}</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button 
+                onClick={() => { setActiveTab("in-call"); setIncomingCall(null); }}
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold text-sm transition-all"
+              >
+                Join
+              </button>
+              <button 
+                onClick={() => setIncomingCall(null)}
+                className="px-6 py-2 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-sm text-gray-400 transition-all"
+              >
+                Ignore
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 

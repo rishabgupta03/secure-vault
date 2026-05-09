@@ -106,6 +106,17 @@ const User = mongoose.model("User", {
   jobTitle: String
 });
 
+const Meeting = mongoose.model("Meeting", {
+  vaultId: String,
+  title: String,
+  startTime: Date,
+  attendees: [String],
+  scheduledBy: String,
+  status: { type: String, default: "scheduled" }
+});
+
+const FileKey = require("./models/FileKey");
+
 const AuditLog = mongoose.model("AuditLog", {
   vaultId: String,
   fileId: String,
@@ -1067,6 +1078,35 @@ app.get("/api/vault/:vaultId/unread", async (req, res) => {
   }
 });
 
+// ================= MEETINGS / CALLS =================
+app.get("/api/vault/:vaultId/meetings", async (req, res) => {
+  try {
+    const meetings = await Meeting.find({ vaultId: req.params.vaultId }).sort({ startTime: 1 });
+    res.json(meetings);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch meetings" });
+  }
+});
+
+app.post("/api/vault/:vaultId/meetings", async (req, res) => {
+  try {
+    const { title, startTime, scheduledBy } = req.body;
+    const meeting = await Meeting.create({
+      vaultId: req.params.vaultId,
+      title,
+      startTime,
+      scheduledBy
+    });
+    
+    // Notify all members via socket (global or vault-specific)
+    io.emit("meeting_scheduled", { vaultId: req.params.vaultId, meeting });
+    
+    res.status(201).json(meeting);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to schedule meeting" });
+  }
+});
+
 // ================= SOCKET.IO =================
 const userSockets = new Map(); // userId -> Set(socketIds)
 
@@ -1124,6 +1164,22 @@ io.on("connection", (socket) => {
       }
       io.emit("online_users_update", Array.from(userSockets.keys()));
     }
+  });
+
+  // --- CALL EVENTS ---
+  socket.on("join_call", (data) => {
+    socket.join(`call_${data.vaultId}`);
+    socket.to(`call_${data.vaultId}`).emit("user_joined_call", data);
+  });
+
+  socket.on("start_call", (data) => {
+    // data: { vaultId, callerId, callerName, vaultName }
+    io.emit("incoming_call_alert", data); // Alert everyone (or filter by vault members client-side)
+  });
+
+  socket.on("leave_call", (data) => {
+    socket.to(`call_${data.vaultId}`).emit("user_left_call", data);
+    socket.leave(`call_${data.vaultId}`);
   });
 });
 
